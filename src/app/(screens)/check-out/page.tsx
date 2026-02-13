@@ -1,0 +1,224 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { ArrowLeft, MessageSquare, LogOut, Gauge, MapPin } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
+import { useCaptain } from "@/context/CaptainContext";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { useTranslation } from "react-i18next";
+import { Input } from "@/components/ui/input";
+
+export default function CheckOutPage() {
+  const router = useRouter();
+  const { checkOut, todayAttendance, earnings, jobs, isCheckOutInFlight } =
+    useCaptain();
+
+  const [notes, setNotes] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [odometer, setOdometer] = useState("");
+
+  const completedJobs = jobs.filter((j) => j.status === "completed").length;
+
+  const { t } = useTranslation();
+
+  useEffect(() => {
+    if (todayAttendance?.endOdometer) {
+      setOdometer(String(todayAttendance.endOdometer));
+    }
+  }, [todayAttendance?.endOdometer]);
+
+  const handleSubmit = async () => {
+    const odometerValue = parseFloat(odometer);
+
+    if (!Number.isFinite(odometerValue) || odometerValue <= 0) {
+      toast.error("Enter a valid odometer reading");
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      const result = await checkOut({
+        endOdometer: odometerValue,
+        notes: notes || undefined,
+        metadata: {
+          lat: 28.6139,
+          lng: 77.209,
+          captured_at: new Date().toISOString(),
+          source: "web",
+        },
+      });
+
+      if (!result.success) {
+        toast.error(result.message || "Unable to complete check-out");
+        return;
+      }
+
+      toast.success(t("checkOut.checkOutSuccess"));
+      router.push("/");
+    } catch (error) {
+      console.error("Check-out failed", error);
+      toast.error("Something went wrong. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-background pb-24">
+      {/* Header */}
+      <header className="sticky top-0 z-40 bg-card border-b border-border">
+        <div className="flex items-center gap-3 p-4 max-w-lg mx-auto">
+          <Button variant="ghost" size="icon" onClick={() => router.push("/")}>
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <div className="flex-1">
+            <h1 className="font-semibold text-foreground">Check Out</h1>
+            <p className="text-sm text-muted-foreground">End your day</p>
+          </div>
+        </div>
+      </header>
+
+      {/* Content */}
+      <main className="p-4 max-w-lg mx-auto space-y-4">
+        {/* Summary */}
+        <Card className="bg-gradient-to-br from-primary to-primary/80 border-0">
+          <CardContent className="p-6 text-primary-foreground">
+            <h2 className="text-lg font-semibold mb-4">Today&apos;s Summary</h2>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-primary-foreground/70 text-sm">
+                  Check-in Time
+                </p>
+                <p className="text-xl font-bold">
+                  {todayAttendance?.checkInTime}
+                </p>
+              </div>
+              <div>
+                <p className="text-primary-foreground/70 text-sm">
+                  Jobs Completed
+                </p>
+                <p className="text-xl font-bold">{completedJobs}</p>
+              </div>
+              <div>
+                <p className="text-primary-foreground/70 text-sm">Earnings</p>
+                <p className="text-xl font-bold">
+                  ₹{earnings.today.toLocaleString()}
+                </p>
+              </div>
+              <div>
+                <p className="text-primary-foreground/70 text-sm">
+                  Start Odometer
+                </p>
+                <p className="text-xl font-bold">
+                  {todayAttendance?.startOdometer ?? "—"}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Closing Fuel */}
+        <Card>
+          <CardContent className="p-6 space-y-6">
+            <div className="text-center">
+              <div className="h-16 w-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Gauge className="h-8 w-8 text-primary" />
+              </div>
+              <h2 className="text-lg font-semibold text-foreground mb-2">
+                {t("checkIn.odometerReading")}
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                {t("checkIn.odometerDescription")}
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">
+                  Current Odometer Reading (km)
+                </label>
+                <Input
+                  type="number"
+                  placeholder="e.g., 45678"
+                  value={odometer}
+                  onChange={(e) => setOdometer(e.target.value)}
+                  className="text-lg h-14 text-center font-semibold"
+                />
+                <p className="text-xs text-muted-foreground text-center">
+                  Enter the exact reading shown on your vehicle&apos;s odometer
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 p-3 bg-accent/50 rounded-lg">
+              <MapPin className="h-5 w-5 text-primary shrink-0" />
+              <div className="text-sm">
+                <p className="font-medium text-foreground">
+                  {t("checkIn.locationCaptured")}
+                </p>
+                <p className="text-muted-foreground">
+                  {t("checkIn.gpsTagged")}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Notes */}
+        <Card>
+          <CardContent className="p-6 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="h-12 w-12 bg-primary/10 rounded-full flex items-center justify-center">
+                <MessageSquare className="h-6 w-6 text-primary" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-foreground">
+                  Notes (Optional)
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  Any issues or feedback?
+                </p>
+              </div>
+            </div>
+
+            <Textarea
+              placeholder="Write any notes about your day..."
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={4}
+            />
+          </CardContent>
+        </Card>
+      </main>
+
+      {/* Footer */}
+      <div className="fixed bottom-0 left-0 right-0 p-4 bg-card border-t border-border">
+        <div className="max-w-lg mx-auto">
+          <Button
+            className="w-full h-12 text-lg bg-destructive hover:bg-destructive/90"
+            disabled={isSubmitting || isCheckOutInFlight}
+            onClick={handleSubmit}
+          >
+            {isSubmitting ? (
+              <div className="flex items-center gap-2">
+                <div className="h-5 w-5 border-2 border-destructive-foreground border-t-transparent rounded-full animate-spin" />
+                <span>Processing...</span>
+              </div>
+            ) : (
+              <span className="flex items-center gap-2">
+                <LogOut className="h-5 w-5" />
+                Confirm Check-Out
+              </span>
+            )}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
