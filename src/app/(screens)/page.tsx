@@ -1,18 +1,18 @@
 "use client";
 
-import { useMemo } from 'react';
-import { Bell } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { CheckInCard } from '@/components/captain/CheckInCard';
-import { EarningsCard } from '@/components/captain/EarningsCard';
-import { JobCard } from '@/components/captain/JobCard';
-import { useCaptain } from '@/context/CaptainContext';
-import { useRouter } from 'next/navigation';
-import { useTranslation } from 'react-i18next';
-import { CheckinAnimation } from '@/components/lottieanimations';
-import Image from 'next/image';
-import { Separator } from '@/components/ui/separator';
-import { FlipWords } from '@/components/ui/flip-text';
+import { useMemo } from "react";
+import { Bell } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { CheckInCard } from "@/components/captain/CheckInCard";
+import { EarningsCard } from "@/components/captain/EarningsCard";
+import { JobCard } from "@/components/captain/JobCard";
+import { useCaptain } from "@/context/CaptainContext";
+import { useRouter } from "next/navigation";
+import { useTranslation } from "react-i18next";
+import { CheckinAnimation } from "@/components/lottieanimations";
+import Image from "next/image";
+import { Separator } from "@/components/ui/separator";
+import { FlipWords } from "@/components/ui/flip-text";
 
 export default function HomePage() {
   const { captain, isCheckedIn, jobs } = useCaptain();
@@ -40,7 +40,7 @@ export default function HomePage() {
       .map((part) =>
         part.length > 0
           ? part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()
-          : part
+          : part,
       )
       .join(" ");
   }, [captain?.name]);
@@ -49,13 +49,13 @@ export default function HomePage() {
     .filter((job) => job.status !== "completed")
     .slice(0, 2);
   const completedToday = jobs.filter(
-    (job) => job.status === "completed"
+    (job) => job.status === "completed",
   ).length;
 
   const openNavigation = (job: (typeof jobs)[0]) => {
     window.open(
       `https://www.google.com/maps/dir/?api=1&destination=${job.location.lat},${job.location.lng}`,
-      "_blank"
+      "_blank",
     );
   };
 
@@ -64,7 +64,6 @@ export default function HomePage() {
   };
 
   return (
-    
     <div className="min-h-screen bg-background pb-20 ">
       {/* Header */}
       <header className="bg-gradient-to-br from-primary via-primary to-primary/80 pt-safe pb-6">
