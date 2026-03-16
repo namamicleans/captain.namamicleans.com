@@ -451,6 +451,7 @@ export async function getCaptainShiftSummary(params?: {
 export async function submitCaptainCheckIn(
   payload: CaptainCheckInRequest
 ): Promise<ServerActionResponse<CaptainShiftLog>> {
+  console.log("Submitting check-in with payload:", payload);
   if (!payload.selfie) {
     return createErrorResponse<CaptainShiftLog>(
       "Selfie capture is required",

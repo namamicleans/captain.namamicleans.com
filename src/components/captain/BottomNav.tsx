@@ -18,7 +18,7 @@ export function BottomNav() {
   ];
 
   // Hide nav during check-in, check-out, and job execution flows
-  const hiddenPaths = ['/check-in', '/check-out', '/auth', '/documents'];
+  const hiddenPaths = ['/login', '/check-in', '/check-out', '/auth', '/documents'];
   if (
     hiddenPaths.includes(pathname) ||
     (pathname.includes('/job/') && pathname.includes('/execute'))

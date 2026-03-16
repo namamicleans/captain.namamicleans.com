@@ -72,23 +72,6 @@ const buildCaptainProfile = (user: UserResponse["user"]): Captain => ({
   joinedDate: "",
 });
 
-const emptyCaptain: Captain = {
-  id: "",
-  name: "Captain",
-  phone: "",
-  rating: 0,
-  totalJobs: 0,
-  joinedDate: "",
-};
-
-const buildUnauthorizedResponse = <T,>(): ServerActionResponse<T> => ({
-  success: false,
-  message: "Not authenticated",
-  code: "unauthorized",
-  data: null,
-  error: "Not authenticated",
-});
-
 const mockEarnings: Earnings = {
   today: 1898,
   thisWeek: 12450,
@@ -114,7 +97,6 @@ export function CaptainProvider({
     if (!initialUser) return null;
     return buildCaptainProfile(initialUser);
   }, [initialUser]);
-  const isAuthenticated = Boolean(initialUser && captain);
   
   const [jobs, setJobs] = useState<Job[]>([]);
   const [activeJob, setActiveJob] = useState<Job | null>(null);
@@ -181,44 +163,32 @@ export function CaptainProvider({
   }, [jobsQuery.data]);
 
   const todayAttendance = shiftQuery.data?.shift ?? null;
-  const materials = useMemo(
-    () => shiftQuery.data?.materials ?? [],
-    [shiftQuery.data?.materials]
-  );
+  const materials = shiftQuery.data?.materials ?? [];
 
   const refreshShift = useCallback(async () => {
-    if (!isAuthenticated) {
-      return;
-    }
     await queryClient.invalidateQueries({ queryKey: shiftQueryKey });
-  }, [isAuthenticated, queryClient, shiftQueryKey]);
+  }, [queryClient, shiftQueryKey]);
 
   const checkIn = useCallback(
     async (payload: CaptainCheckInRequest) => {
-      if (!isAuthenticated) {
-        return buildUnauthorizedResponse<CaptainShiftLog>();
-      }
       const result = await checkInMutation.mutateAsync(payload);
       if (result.success) {
         await queryClient.invalidateQueries({ queryKey: shiftQueryKey });
       }
       return result;
     },
-    [checkInMutation, isAuthenticated, queryClient, shiftQueryKey]
+    [checkInMutation, queryClient, shiftQueryKey]
   );
 
   const checkOut = useCallback(
     async (payload: CaptainCheckOutRequest) => {
-      if (!isAuthenticated) {
-        return buildUnauthorizedResponse<CaptainShiftLog>();
-      }
       const result = await checkOutMutation.mutateAsync(payload);
       if (result.success) {
         await queryClient.invalidateQueries({ queryKey: shiftQueryKey });
       }
       return result;
     },
-    [checkOutMutation, isAuthenticated, queryClient, shiftQueryKey]
+    [checkOutMutation, queryClient, shiftQueryKey]
   );
 
   const updateJob = useCallback((jobId: string, updates: Partial<Job>) => {
@@ -247,11 +217,11 @@ export function CaptainProvider({
   // Compute context value - always called, regardless of auth state
   const contextValue = useMemo(
     () => ({
-      captain: captain ?? emptyCaptain,
+      captain: captain || ({} as Captain),
       todayAttendance,
       materials,
       isCheckedIn: Boolean(
-        isAuthenticated && todayAttendance && todayAttendance.status !== "pending"
+        todayAttendance && todayAttendance.status !== "pending"
       ),
       isShiftLoading: shiftQuery.isPending || shiftQuery.isFetching,
       isCheckInInFlight: checkInMutation.isPending,
@@ -270,7 +240,6 @@ export function CaptainProvider({
       captain,
       todayAttendance,
       materials,
-      isAuthenticated,
       shiftQuery.isPending,
       shiftQuery.isFetching,
       checkInMutation.isPending,
