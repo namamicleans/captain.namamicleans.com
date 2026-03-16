@@ -36,23 +36,55 @@ export function ImageUploader({
     fileInputRef.current?.click();
   };
 
+  const compressImage = (
+    file: File,
+    maxWidth = 1280,
+    quality = 0.8
+  ): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new window.Image();
+        img.onload = () => {
+          const scale = Math.min(1, maxWidth / img.width);
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.round(img.width * scale);
+          canvas.height = Math.round(img.height * scale);
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            reject(new Error('Canvas not supported'));
+            return;
+          }
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        };
+        img.onerror = reject;
+        img.src = event.target?.result as string;
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setIsCapturing(true);
-    
-    // Read captured file as base64 string
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const base64 = event.target?.result as string;
-      onImagesChange([...images, base64]);
-      onImageCaptured?.({ dataUrl: base64, capturedAt: new Date().toISOString() });
-      setIsCapturing(false);
-      toast.success('Photo captured successfully');
-    };
-    reader.readAsDataURL(file);
-    
+
+    compressImage(file)
+      .then((base64) => {
+        onImagesChange([...images, base64]);
+        onImageCaptured?.({ dataUrl: base64, capturedAt: new Date().toISOString() });
+        toast.success('Photo captured successfully');
+      })
+      .catch(() => {
+        toast.error('Failed to process image. Please try again.');
+      })
+      .finally(() => {
+        setIsCapturing(false);
+      });
+
     // Reset input
     e.target.value = '';
   };
