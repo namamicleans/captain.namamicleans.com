@@ -14,12 +14,14 @@ const nextConfig = {
         protocol: 'https',
         hostname: 'images.unsplash.com',
       },
+      {
+        protocol: 'https',
+        hostname: 'crm.namamicleans.com',
+      }
     ],
   },
-  experimental: {
-    serverActions: {
-      bodySizeLimit: '4mb',
-    },
+  serverActions: {
+    bodySizeLimit: '10mb',
   },
 }
 
