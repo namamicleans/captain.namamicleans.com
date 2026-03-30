@@ -233,6 +233,19 @@ export default function CheckInPage() {
         return;
       }
 
+      const selfiePayload = selfie[0];
+      const MAX_SELFIE_STRING_LENGTH = 1_200_000;
+      if (selfiePayload.length > MAX_SELFIE_STRING_LENGTH) {
+        toast.error(
+          t(
+            "checkIn.selfieTooLarge",
+            "Selfie is too large. Please retake the photo and try again."
+          )
+        );
+        setIsSubmitting(false);
+        return;
+      }
+
       if (!selfieMeta?.location) {
         toast.error(
           t(
@@ -294,7 +307,7 @@ export default function CheckInPage() {
       }
 
       const payload = {
-        selfie: selfie[0],
+        selfie: selfiePayload,
         start_odometer: odometer ? Number.parseFloat(odometer) : undefined,
         materials: selectedMaterials,
         metadata,

@@ -28,6 +28,31 @@ export function ImageUploader({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isCapturing, setIsCapturing] = useState(false);
 
+  const estimateDataUrlBytes = (dataUrl: string): number => {
+    const base64Payload = dataUrl.split(',')[1] ?? '';
+    const paddingMatch = /=+$/.exec(base64Payload);
+    const padding = paddingMatch?.[0]?.length ?? 0;
+    return Math.floor((base64Payload.length * 3) / 4) - padding;
+  };
+
+  const loadImageAsDataUrl = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (event) => resolve((event.target?.result as string) ?? '');
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const loadImageElement = (src: string): Promise<HTMLImageElement> => {
+    return new Promise((resolve, reject) => {
+      const img = new globalThis.Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = src;
+    });
+  };
+
   const handleCapture = () => {
     if (images.length >= maxImages) {
       toast.error(`Maximum ${maxImages} images allowed`);
@@ -36,34 +61,67 @@ export function ImageUploader({
     fileInputRef.current?.click();
   };
 
-  const compressImage = (
-    file: File,
-    maxWidth = 1280,
-    quality = 0.8
-  ): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const img = new window.Image();
-        img.onload = () => {
-          const scale = Math.min(1, maxWidth / img.width);
-          const canvas = document.createElement('canvas');
-          canvas.width = Math.round(img.width * scale);
-          canvas.height = Math.round(img.height * scale);
-          const ctx = canvas.getContext('2d');
-          if (!ctx) {
-            reject(new Error('Canvas not supported'));
-            return;
-          }
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          resolve(canvas.toDataURL('image/jpeg', quality));
-        };
-        img.onerror = reject;
-        img.src = event.target?.result as string;
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
+  const compressImage = async (file: File): Promise<string> => {
+    const TARGET_MAX_BYTES = 450 * 1024;
+    const START_MAX_WIDTH = 1280;
+    const MIN_WIDTH = 640;
+    const START_QUALITY = 0.8;
+    const MIN_QUALITY = 0.45;
+    const WIDTH_REDUCTION_FACTOR = 0.85;
+    const QUALITY_STEP = 0.08;
+    const MAX_ATTEMPTS = 12;
+
+    const src = await loadImageAsDataUrl(file);
+    const img = await loadImageElement(src);
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      throw new Error('Canvas not supported');
+    }
+
+    let currentWidth = Math.min(img.width, START_MAX_WIDTH);
+    let currentQuality = START_QUALITY;
+    let bestEffortDataUrl = '';
+
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+      const scale = Math.min(1, currentWidth / img.width);
+      canvas.width = Math.max(1, Math.round(img.width * scale));
+      canvas.height = Math.max(1, Math.round(img.height * scale));
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+      const dataUrl = canvas.toDataURL('image/jpeg', currentQuality);
+      bestEffortDataUrl = dataUrl;
+
+      const estimatedBytes = estimateDataUrlBytes(dataUrl);
+      if (estimatedBytes <= TARGET_MAX_BYTES) {
+        return dataUrl;
+      }
+
+      const canReduceWidth = currentWidth > MIN_WIDTH;
+      const canReduceQuality = currentQuality > MIN_QUALITY;
+
+      if (!canReduceWidth && !canReduceQuality) {
+        break;
+      }
+
+      if (canReduceQuality) {
+        currentQuality = Math.max(
+          MIN_QUALITY,
+          Number((currentQuality - QUALITY_STEP).toFixed(2))
+        );
+      }
+
+      if (canReduceWidth && (estimatedBytes > TARGET_MAX_BYTES * 1.25 || !canReduceQuality)) {
+        currentWidth = Math.max(
+          MIN_WIDTH,
+          Math.round(currentWidth * WIDTH_REDUCTION_FACTOR)
+        );
+      }
+    }
+
+    return bestEffortDataUrl;
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
