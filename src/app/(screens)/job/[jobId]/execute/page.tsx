@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Navigation, Phone, CheckCircle2, PartyPopper } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -13,6 +13,8 @@ import { Spinner } from '@/components/ui/spinner';
 import { useCaptain } from '@/context/CaptainContext';
 import { useRouter, useParams } from 'next/navigation';
 import { serviceConfigs } from '@shared/config/serviceConfig';
+import type { CaptainExecutionChecklistTemplateItem } from '@/types/captain';
+import { toast } from 'sonner';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,7 +32,13 @@ export default function JobExecutionPage() {
   const params = useParams();
   const jobId = params.jobId as string;
   const router = useRouter();
-  const { jobs, updateJob, completeJob } = useCaptain();
+  const {
+    jobs,
+    updateJob,
+    startJobExecution,
+    completeJobExecution,
+    getJobExecution,
+  } = useCaptain();
 
   const job = jobs.find(j => j.id === jobId);
   const serviceConfig = job ? serviceConfigs[job.serviceType] : null;
@@ -42,13 +50,95 @@ export default function JobExecutionPage() {
   const [notes, setNotes] = useState('');
   const [customerRating, setCustomerRating] = useState(0);
   const [showExitDialog, setShowExitDialog] = useState(false);
+  const [isStarting, setIsStarting] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [checklistTemplate, setChecklistTemplate] = useState<CaptainExecutionChecklistTemplateItem[]>([]);
+
+  const checklistSteps = useMemo(
+    () => {
+      if (checklistTemplate.length > 0) {
+        return checklistTemplate.map((item) => ({
+          id: item.id,
+          title: item.label,
+          instruction: item.description || '',
+          required: item.required,
+        }));
+      }
+
+      return serviceConfig?.steps || [];
+    },
+    [checklistTemplate, serviceConfig]
+  );
 
   const requiredSteps = useMemo(() => 
-    serviceConfig?.steps.filter(s => s.required).map(s => s.id) || [],
-    [serviceConfig]
+    checklistSteps.filter(s => s.required).map(s => s.id),
+    [checklistSteps]
   );
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const prefillExecution = async () => {
+      if (!job) {
+        return;
+      }
+
+      const result = await getJobExecution(job.id);
+      if (!isMounted || !result.success || !result.data) {
+        return;
+      }
+
+      const execution = result.data;
+
+      if (execution.checklist_template.length > 0) {
+        setChecklistTemplate(execution.checklist_template);
+      }
+
+      const beforeFromBackend = execution.before_images
+        .map((img) => img.url)
+        .filter((url): url is string => Boolean(url));
+      const afterFromBackend = execution.after_images
+        .map((img) => img.url)
+        .filter((url): url is string => Boolean(url));
+
+      if (beforeFromBackend.length > 0 || execution.before_image_urls.length > 0) {
+        setBeforeImages(beforeFromBackend.length > 0 ? beforeFromBackend : execution.before_image_urls);
+      }
+
+      if (afterFromBackend.length > 0 || execution.after_image_urls.length > 0) {
+        setAfterImages(afterFromBackend.length > 0 ? afterFromBackend : execution.after_image_urls);
+      }
+
+      if (execution.checklist_data.length > 0) {
+        const completed = execution.checklist_data
+          .filter((item) => item.completed)
+          .map((item) => item.id);
+        setCompletedSteps(completed);
+      }
+
+      if (execution.captain_notes) {
+        setNotes(execution.captain_notes);
+      }
+
+      if (execution.captain_rating_for_customer) {
+        setCustomerRating(execution.captain_rating_for_customer);
+      }
+
+      if (execution.started_at && job.status === 'scheduled') {
+        updateJob(job.id, {
+          status: 'ongoing',
+          startedAt: execution.started_at,
+        });
+      }
+    };
+
+    prefillExecution();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [getJobExecution, job, updateJob]);
 
   if (!job || !serviceConfig) {
     return (
@@ -73,7 +163,22 @@ export default function JobExecutionPage() {
     }
   };
 
-  const handleNext = () => {
+  const handleNext = async () => {
+    if (!job) {
+      return;
+    }
+
+    if (currentStep === 0 && job.status === 'scheduled') {
+      setIsStarting(true);
+      const startResult = await startJobExecution(job.id, { source: 'captain-web' });
+      setIsStarting(false);
+
+      if (!startResult.success) {
+        toast.error(startResult.message || 'Unable to start job right now');
+        return;
+      }
+    }
+
     if (currentStep < executionSteps.length - 1) {
       // Save progress
       updateJob(job.id, {
@@ -105,9 +210,39 @@ export default function JobExecutionPage() {
 
   const handleComplete = async () => {
     setIsSubmitting(true);
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    completeJob(job.id, afterImages, notes);
+
+    const checklist = checklistSteps.map((step) => ({
+      id: step.id,
+      label: step.title,
+      required: step.required,
+      completed: completedSteps.includes(step.id),
+    }));
+
+    const completionResult = await completeJobExecution(job.id, {
+      beforeImages,
+      afterImages,
+      checklist,
+      captainRatingForCustomer: customerRating,
+      captainNotes: notes || undefined,
+      summary: {
+        service_name: job.serviceName,
+        customer_name: job.customerName,
+        before_images_count: beforeImages.length,
+        after_images_count: afterImages.length,
+        checklist_completed_count: checklist.filter((item) => item.completed).length,
+        checklist_total_count: checklist.length,
+      },
+      metadata: {
+        source: 'captain-web',
+      },
+    });
+
+    if (!completionResult.success) {
+      toast.error(completionResult.message || 'Unable to complete job right now');
+      setIsSubmitting(false);
+      return;
+    }
+
     setIsSubmitting(false);
     setShowSuccess(true);
   };
@@ -117,6 +252,37 @@ export default function JobExecutionPage() {
       `https://www.google.com/maps/dir/?api=1&destination=${job.location.lat},${job.location.lng}`,
       '_blank'
     );
+  };
+
+  const getPrimaryButtonContent = () => {
+    if (isSubmitting) {
+      return (
+        <div className="flex items-center gap-2">
+          <Spinner size="sm" />
+          <span>Completing...</span>
+        </div>
+      );
+    }
+
+    if (isStarting) {
+      return (
+        <div className="flex items-center gap-2">
+          <Spinner size="sm" />
+          <span>Starting...</span>
+        </div>
+      );
+    }
+
+    if (currentStep === executionSteps.length - 1) {
+      return (
+        <span className="flex items-center gap-2">
+          <CheckCircle2 className="h-5 w-5" />
+          Complete Job
+        </span>
+      );
+    }
+
+    return 'Continue';
   };
 
   // Success Animation
@@ -130,7 +296,7 @@ export default function JobExecutionPage() {
           <div>
             <h1 className="text-2xl font-bold text-foreground mb-2">Job Completed!</h1>
             <p className="text-muted-foreground">
-              Great work! ₹{job.paymentAmount} has been added to your earnings.
+              Great work! Your job completion has been recorded successfully.
             </p>
           </div>
           <Button size="lg" onClick={() => router.push('/jobs')}>
@@ -206,7 +372,7 @@ export default function JobExecutionPage() {
           <Card>
             <CardContent className="p-6">
               <ServiceStepsChecklist
-                steps={serviceConfig.steps}
+                steps={checklistSteps}
                 completedSteps={completedSteps}
                 onToggle={toggleStep}
               />
@@ -261,7 +427,7 @@ export default function JobExecutionPage() {
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Steps Completed</span>
                     <span className="font-medium text-foreground">
-                      {completedSteps.length}/{serviceConfig.steps.length}
+                      {completedSteps.length}/{checklistSteps.length}
                     </span>
                   </div>
                   <div className="flex justify-between">
@@ -308,22 +474,10 @@ export default function JobExecutionPage() {
         <div className="max-w-lg mx-auto">
           <Button
             className="w-full h-12 text-lg"
-            disabled={!canProceed() || isSubmitting}
+            disabled={!canProceed() || isSubmitting || isStarting}
             onClick={handleNext}
           >
-          {isSubmitting ? (
-              <div className="flex items-center gap-2">
-                <Spinner size="sm" />
-                <span>Completing...</span>
-              </div>
-            ) : currentStep === executionSteps.length - 1 ? (
-              <span className="flex items-center gap-2">
-                <CheckCircle2 className="h-5 w-5" />
-                Complete Job
-              </span>
-            ) : (
-              'Continue'
-            )}
+            {getPrimaryButtonContent()}
           </Button>
         </div>
       </div>

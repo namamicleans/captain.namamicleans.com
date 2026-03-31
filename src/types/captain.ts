@@ -71,6 +71,7 @@ export interface CaptainCheckOutRequest {
   endOdometer: number;
   notes?: string;
   metadata?: Record<string, unknown>;
+  shiftDate?: string;
 }
 
 export interface Captain {
@@ -89,6 +90,77 @@ export interface CaptainJobFilters {
   status?: string;
   page?: number;
   pageSize?: number;
+}
+
+export interface CaptainExecutionChecklistItem {
+  id: string;
+  label: string;
+  required: boolean;
+  completed: boolean;
+}
+
+export interface CaptainExecutionChecklistTemplateItem {
+  id: string;
+  label: string;
+  description?: string | null;
+  required: boolean;
+  order: number;
+}
+
+export interface CaptainBookingExecutionStartRequest {
+  metadata?: Record<string, unknown>;
+}
+
+export interface CaptainBookingExecutionCompleteRequest {
+  beforeImages: string[];
+  afterImages: string[];
+  checklist: CaptainExecutionChecklistItem[];
+  captainRatingForCustomer: number;
+  captainNotes?: string;
+  summary?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+}
+
+export interface CaptainBookingExecutionGalleryImage {
+  id: number;
+  url: string | null;
+  stage: "before" | "after";
+  order: number;
+  caption: string | null;
+  alt_text: string | null;
+}
+
+export interface CaptainBookingExecutionFeedback {
+  id: number;
+  rated_by: string;
+  rating: number;
+  comments: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CaptainBookingExecutionDetail {
+  booking_id: string;
+  booking_status: string;
+  scheduled_date: string;
+  scheduled_time: string;
+  started_at: string | null;
+  completed_at: string | null;
+  checklist_template: CaptainExecutionChecklistTemplateItem[];
+  checklist_data: CaptainExecutionChecklistItem[];
+  checklist_completed_count: number;
+  checklist_total_count: number;
+  captain_notes: string | null;
+  captain_rating_for_customer: number | null;
+  summary_snapshot: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+  before_images: CaptainBookingExecutionGalleryImage[];
+  after_images: CaptainBookingExecutionGalleryImage[];
+  before_image_urls: string[];
+  after_image_urls: string[];
+  feedback: CaptainBookingExecutionFeedback | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Job {

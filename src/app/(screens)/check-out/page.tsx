@@ -10,11 +10,13 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { Input } from "@/components/ui/input";
+import { usePermissions } from "@/shared/hooks/usePermissions";
 
 export default function CheckOutPage() {
   const router = useRouter();
-  const { checkOut, todayAttendance, earnings, jobs, isCheckOutInFlight } =
+  const { checkOut, todayAttendance, jobs, isCheckOutInFlight } =
     useCaptain();
+  const { getCurrentLocation, requestLocationPermission } = usePermissions();
 
   const [notes, setNotes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -40,15 +42,32 @@ export default function CheckOutPage() {
 
     setIsSubmitting(true);
 
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+    let position: GeolocationPosition;
 
+    try {
+      position = await getCurrentLocation();
+    } catch (error) {
+      console.error("Check-out location capture failed", error);
+      toast.error(
+        t(
+          "checkIn.enableLocation",
+          "Enable location services and try check-out again."
+        )
+      );
+      await requestLocationPermission();
+      setIsSubmitting(false);
+      return;
+    }
+
+    try {
       const result = await checkOut({
         endOdometer: odometerValue,
         notes: notes || undefined,
+        shiftDate: todayAttendance?.shiftDate,
         metadata: {
-          lat: 28.6139,
-          lng: 77.209,
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+          accuracy: position.coords.accuracy,
           captured_at: new Date().toISOString(),
           source: "web",
         },
@@ -106,10 +125,8 @@ export default function CheckOutPage() {
                 <p className="text-xl font-bold">{completedJobs}</p>
               </div>
               <div>
-                <p className="text-primary-foreground/70 text-sm">Earnings</p>
-                <p className="text-xl font-bold">
-                  ₹{earnings.today.toLocaleString()}
-                </p>
+                <p className="text-primary-foreground/70 text-sm">Shift Status</p>
+                <p className="text-xl font-bold">In Progress</p>
               </div>
               <div>
                 <p className="text-primary-foreground/70 text-sm">

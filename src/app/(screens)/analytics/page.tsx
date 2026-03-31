@@ -1,6 +1,6 @@
 "use client";
 
-import { TrendingUp, IndianRupee, Car, Fuel } from 'lucide-react';
+import { TrendingUp, IndianRupee, Car, Fuel, BarChart3 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AttendanceCalendar } from '@/components/captain/AttendanceCalendar';
@@ -8,6 +8,35 @@ import { useCaptain } from '@/context/CaptainContext';
 
 export default function AnalyticsPage() {
   const { earnings } = useCaptain();
+  const showAnalyticsComingSoon = process.env.NEXT_PUBLIC_ANALYTICS_READY !== 'true';
+
+  if (showAnalyticsComingSoon) {
+    return (
+      <div className="min-h-screen bg-background pb-20">
+        <header className="sticky top-0 z-40 bg-card border-b border-border">
+          <div className="p-4 max-w-lg mx-auto">
+            <h1 className="text-xl font-bold text-foreground">Analytics</h1>
+            <p className="text-sm text-muted-foreground">Your performance dashboard</p>
+          </div>
+        </header>
+
+        <main className="p-4 max-w-lg mx-auto">
+          <Card>
+            <CardContent className="p-8 text-center space-y-3">
+              <div className="h-14 w-14 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
+                <BarChart3 className="h-7 w-7 text-primary" />
+              </div>
+              <h2 className="text-lg font-semibold text-foreground">Analytics Coming Soon</h2>
+              <p className="text-sm text-muted-foreground">
+                We are working on your detailed performance insights.
+              </p>
+            </CardContent>
+          </Card>
+        </main>
+      </div>
+    );
+  }
+
   const thisMonthJobs = 28; // Mock
   const totalKm = 245; // Mock
   const fuelUsed = 32; // Mock liters

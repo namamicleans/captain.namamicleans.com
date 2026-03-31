@@ -75,9 +75,11 @@ export function ServiceStepsChecklist({ steps, completedSteps, onToggle }: Servi
                     </span>
                   )}
                 </div>
-                <p className="text-sm text-muted-foreground mt-1">
-                  {step.instruction}
-                </p>
+                {step.instruction && (
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {step.instruction}
+                  </p>
+                )}
               </div>
             </button>
           );
