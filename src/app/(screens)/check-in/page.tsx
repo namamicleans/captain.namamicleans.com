@@ -30,6 +30,12 @@ interface SelfieCaptureMeta {
   };
 }
 
+interface NavigatorWithUserAgentData extends Navigator {
+  userAgentData?: {
+    platform?: string;
+  };
+}
+
 const steps = ["Selfie", "Materials", "Odometer"];
 
 export default function CheckInPage() {
@@ -90,7 +96,7 @@ export default function CheckInPage() {
   };
 
   useEffect(() => {
-    if (!todayAttendance || !todayAttendance.materials?.length) {
+    if (!todayAttendance?.materials?.length) {
       return;
     }
 
@@ -287,11 +293,12 @@ export default function CheckInPage() {
 
       const deviceMetadata: Record<string, string> = { source: "captain-web" };
       if (typeof navigator !== "undefined") {
+        const userNavigator = navigator as NavigatorWithUserAgentData;
         if (navigator.userAgent) {
           deviceMetadata.user_agent = navigator.userAgent;
         }
-        if (navigator.platform) {
-          deviceMetadata.platform = navigator.platform;
+        if (userNavigator.userAgentData?.platform) {
+          deviceMetadata.platform = userNavigator.userAgentData.platform;
         }
       }
 

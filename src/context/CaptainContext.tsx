@@ -14,11 +14,17 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   Captain,
   CaptainCheckInRequest,
+  CaptainCompleteJobExecutionRequest,
   CaptainCheckOutRequest,
+  CaptainLeaveBalance,
+  CaptainLeaveDraftRequest,
+  CaptainLeaveRequest,
   CaptainJobFilters,
+  CaptainJobExecution,
   CaptainMaterial,
   CaptainShiftLog,
   CaptainShiftSummary,
+  CaptainTimesheet,
   Earnings,
   Job,
 } from "@/types/captain";
@@ -38,6 +44,35 @@ export interface CaptainActions {
   fetchJobs: (
     params?: CaptainJobFilters
   ) => Promise<ServerActionResponse<Job[]>>;
+  fetchTimesheet?: (params: {
+    startDate: string;
+    endDate: string;
+  }) => Promise<ServerActionResponse<CaptainTimesheet>>;
+  fetchLeaveBalance?: () => Promise<ServerActionResponse<CaptainLeaveBalance>>;
+  fetchLeaves?: () => Promise<ServerActionResponse<CaptainLeaveRequest[]>>;
+  createLeaveDraft?: (
+    payload: CaptainLeaveDraftRequest
+  ) => Promise<ServerActionResponse<CaptainLeaveRequest>>;
+  getLeaveDetail?: (
+    leaveId: number
+  ) => Promise<ServerActionResponse<CaptainLeaveRequest>>;
+  submitLeave?: (
+    leaveId: number
+  ) => Promise<ServerActionResponse<CaptainLeaveRequest>>;
+  withdrawLeave?: (
+    leaveId: number
+  ) => Promise<ServerActionResponse<CaptainLeaveRequest>>;
+  startJobExecution?: (
+    jobId: string,
+    metadata?: Record<string, unknown>
+  ) => Promise<ServerActionResponse<CaptainJobExecution>>;
+  completeJobExecution?: (
+    jobId: string,
+    payload: CaptainCompleteJobExecutionRequest
+  ) => Promise<ServerActionResponse<CaptainJobExecution>>;
+  getJobExecution?: (
+    jobId: string
+  ) => Promise<ServerActionResponse<CaptainJobExecution>>;
 }
 
 interface CaptainContextType {
@@ -58,10 +93,47 @@ interface CaptainContextType {
     payload: CaptainCheckOutRequest
   ) => Promise<ServerActionResponse<CaptainShiftLog>>;
   refreshShift: () => Promise<void>;
+  startJobExecution: (
+    jobId: string,
+    metadata?: Record<string, unknown>
+  ) => Promise<ServerActionResponse<CaptainJobExecution>>;
+  completeJobExecution: (
+    jobId: string,
+    payload: CaptainCompleteJobExecutionRequest
+  ) => Promise<ServerActionResponse<CaptainJobExecution>>;
+  getJobExecution: (
+    jobId: string
+  ) => Promise<ServerActionResponse<CaptainJobExecution>>;
+  fetchTimesheet: (params: {
+    startDate: string;
+    endDate: string;
+  }) => Promise<ServerActionResponse<CaptainTimesheet>>;
+  fetchLeaveBalance: () => Promise<ServerActionResponse<CaptainLeaveBalance>>;
+  fetchLeaves: () => Promise<ServerActionResponse<CaptainLeaveRequest[]>>;
+  createLeaveDraft: (
+    payload: CaptainLeaveDraftRequest
+  ) => Promise<ServerActionResponse<CaptainLeaveRequest>>;
+  getLeaveDetail: (
+    leaveId: number
+  ) => Promise<ServerActionResponse<CaptainLeaveRequest>>;
+  submitLeave: (
+    leaveId: number
+  ) => Promise<ServerActionResponse<CaptainLeaveRequest>>;
+  withdrawLeave: (
+    leaveId: number
+  ) => Promise<ServerActionResponse<CaptainLeaveRequest>>;
   setActiveJob: (job: Job | null) => void;
   updateJob: (jobId: string, updates: Partial<Job>) => void;
   completeJob: (jobId: string, afterImages: string[], notes?: string) => void;
 }
+
+const notConfiguredResponse = <T,>(message: string): ServerActionResponse<T> => ({
+  success: false,
+  message,
+  code: "NOT_IMPLEMENTED",
+  data: null,
+  error: message,
+});
 
 const buildCaptainProfile = (user: UserResponse["user"]): Captain => ({
   id: String(user.id),
@@ -191,6 +263,130 @@ export function CaptainProvider({
     [checkOutMutation, queryClient, shiftQueryKey]
   );
 
+  const fetchTimesheet = useCallback(
+    async (params: { startDate: string; endDate: string }) => {
+      if (!actions.fetchTimesheet) {
+        return notConfiguredResponse<CaptainTimesheet>(
+          "Timesheet action is not configured."
+        );
+      }
+
+      return actions.fetchTimesheet(params);
+    },
+    [actions]
+  );
+
+  const fetchLeaveBalance = useCallback(async () => {
+    if (!actions.fetchLeaveBalance) {
+      return notConfiguredResponse<CaptainLeaveBalance>(
+        "Leave balance action is not configured."
+      );
+    }
+
+    return actions.fetchLeaveBalance();
+  }, [actions]);
+
+  const fetchLeaves = useCallback(async () => {
+    if (!actions.fetchLeaves) {
+      return notConfiguredResponse<CaptainLeaveRequest[]>(
+        "Leave list action is not configured."
+      );
+    }
+
+    return actions.fetchLeaves();
+  }, [actions]);
+
+  const createLeaveDraft = useCallback(
+    async (payload: CaptainLeaveDraftRequest) => {
+      if (!actions.createLeaveDraft) {
+        return notConfiguredResponse<CaptainLeaveRequest>(
+          "Leave create action is not configured."
+        );
+      }
+
+      return actions.createLeaveDraft(payload);
+    },
+    [actions]
+  );
+
+  const getLeaveDetail = useCallback(
+    async (leaveId: number) => {
+      if (!actions.getLeaveDetail) {
+        return notConfiguredResponse<CaptainLeaveRequest>(
+          "Leave detail action is not configured."
+        );
+      }
+
+      return actions.getLeaveDetail(leaveId);
+    },
+    [actions]
+  );
+
+  const submitLeave = useCallback(
+    async (leaveId: number) => {
+      if (!actions.submitLeave) {
+        return notConfiguredResponse<CaptainLeaveRequest>(
+          "Leave submit action is not configured."
+        );
+      }
+
+      return actions.submitLeave(leaveId);
+    },
+    [actions]
+  );
+
+  const withdrawLeave = useCallback(
+    async (leaveId: number) => {
+      if (!actions.withdrawLeave) {
+        return notConfiguredResponse<CaptainLeaveRequest>(
+          "Leave withdraw action is not configured."
+        );
+      }
+
+      return actions.withdrawLeave(leaveId);
+    },
+    [actions]
+  );
+
+  const startJobExecution = useCallback(
+    async (jobId: string, metadata?: Record<string, unknown>) => {
+      if (!actions.startJobExecution) {
+        return notConfiguredResponse<CaptainJobExecution>(
+          "Job start action is not configured."
+        );
+      }
+
+      return actions.startJobExecution(jobId, metadata);
+    },
+    [actions]
+  );
+
+  const completeJobExecution = useCallback(
+    async (jobId: string, payload: CaptainCompleteJobExecutionRequest) => {
+      if (!actions.completeJobExecution) {
+        return notConfiguredResponse<CaptainJobExecution>(
+          "Job completion action is not configured."
+        );
+      }
+
+      return actions.completeJobExecution(jobId, payload);
+    },
+    [actions]
+  );
+
+  const getJobExecution = useCallback(
+    async (jobId: string) => {
+      if (!actions.getJobExecution) {
+        return notConfiguredResponse<CaptainJobExecution>(
+          "Job execution fetch action is not configured."
+        );
+      }
+
+      return actions.getJobExecution(jobId);
+    },
+    [actions]
+  );
+
   const updateJob = useCallback((jobId: string, updates: Partial<Job>) => {
     setJobs((prev) =>
       prev.map((job) => (job.id === jobId ? { ...job, ...updates } : job))
@@ -232,6 +428,16 @@ export function CaptainProvider({
       checkIn,
       checkOut,
       refreshShift,
+      fetchTimesheet,
+      fetchLeaveBalance,
+      fetchLeaves,
+      createLeaveDraft,
+      getLeaveDetail,
+      submitLeave,
+      withdrawLeave,
+      startJobExecution,
+      completeJobExecution,
+      getJobExecution,
       setActiveJob,
       updateJob,
       completeJob,
@@ -250,6 +456,16 @@ export function CaptainProvider({
       checkIn,
       checkOut,
       refreshShift,
+      fetchTimesheet,
+      fetchLeaveBalance,
+      fetchLeaves,
+      createLeaveDraft,
+      getLeaveDetail,
+      submitLeave,
+      withdrawLeave,
+      startJobExecution,
+      completeJobExecution,
+      getJobExecution,
       updateJob,
       completeJob,
     ]

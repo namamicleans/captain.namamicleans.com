@@ -71,6 +71,96 @@ export interface CaptainCheckOutRequest {
   endOdometer: number;
   notes?: string;
   metadata?: Record<string, unknown>;
+  shiftDate?: string;
+}
+
+export interface CaptainExecutionChecklistTemplateItem {
+  id: string;
+  label: string;
+  description: string | null;
+  required: boolean;
+}
+
+export interface CaptainJobExecutionChecklistItem {
+  id: string;
+  label: string;
+  required: boolean;
+  completed: boolean;
+}
+
+export interface CaptainJobExecutionImage {
+  id: string;
+  url: string | null;
+}
+
+export interface CaptainJobExecution {
+  checklist_template: CaptainExecutionChecklistTemplateItem[];
+  checklist_data: CaptainJobExecutionChecklistItem[];
+  before_images: CaptainJobExecutionImage[];
+  after_images: CaptainJobExecutionImage[];
+  before_image_urls: string[];
+  after_image_urls: string[];
+  captain_notes: string | null;
+  captain_rating_for_customer: number | null;
+  started_at: string | null;
+}
+
+export interface CaptainCompleteJobExecutionRequest {
+  beforeImages: string[];
+  afterImages: string[];
+  checklist: CaptainJobExecutionChecklistItem[];
+  captainRatingForCustomer?: number;
+  captainNotes?: string;
+  summary?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+}
+
+export type CaptainLeaveStatus =
+  | "draft"
+  | "submitted"
+  | "approved"
+  | "rejected"
+  | "withdrawn"
+  | "cancelled";
+
+export interface CaptainLeaveRequest {
+  id: number;
+  request_code: string;
+  start_date: string;
+  end_date: string;
+  status: CaptainLeaveStatus;
+  leave_units: number;
+  reason: string | null;
+}
+
+export interface CaptainLeaveBalance {
+  available_units: number;
+  pending_units: number;
+  used_units: number;
+}
+
+export interface CaptainLeaveDraftRequest {
+  start_date: string;
+  end_date: string;
+  start_time?: string;
+  end_time?: string;
+  leave_units?: string;
+  reason?: string;
+  manager_note?: string;
+}
+
+export interface CaptainTimesheet {
+  shifts: Array<{
+    shiftDate: string;
+    checkInTime: string | null;
+    checkOutTime: string | null;
+  }>;
+  leave_requests: Array<{
+    id: number;
+    start_date: string;
+    end_date: string;
+    status: CaptainLeaveStatus;
+  }>;
 }
 
 export interface Captain {
