@@ -1,6 +1,21 @@
 import { NextRequest, NextResponse, userAgent } from "next/server";
 import { decrypt } from "@/core/auth/crypto";
 
+function normalizeRole(role: unknown): string {
+  if (typeof role === "string") {
+    return role.trim().toLowerCase();
+  }
+
+  if (role && typeof role === "object" && "name" in role) {
+    const roleName = (role as { name?: unknown }).name;
+    if (typeof roleName === "string") {
+      return roleName.trim().toLowerCase();
+    }
+  }
+
+  return "";
+}
+
 export default async function middleware(
   request: NextRequest
 ): Promise<NextResponse> {
@@ -21,16 +36,29 @@ export default async function middleware(
     return NextResponse.redirect(authUrl);
   }
 
+  const normalizedRole = normalizeRole((session as { user?: { role?: unknown } } | null)?.user?.role);
+
+  if (normalizedRole !== "captain") {
+    if (path === "/login") {
+      return NextResponse.next();
+    }
+
+    const authUrl = new URL("/login", request.nextUrl);
+    authUrl.searchParams.set("error", "role");
+    const response = NextResponse.redirect(authUrl);
+    response.cookies.delete("session");
+    return response;
+  }
+
   // If logged in AND trying to access login → redirect to home
   if (path === "/login") {
     return NextResponse.redirect(new URL("/", request.nextUrl));
   }
 
   // Logged in and accessing protected routes → allow access
-  const role = session.user.role;
   const response = NextResponse.next();
   response.headers.set("x-device-type", device.type || "desktop");
-  response.headers.set("x-user-role", role);
+  response.headers.set("x-user-role", normalizedRole || "captain");
   return response;
 }
 

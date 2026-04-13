@@ -3,13 +3,8 @@
 import { apiGet, apiPost, fetchWithSession } from "@core/http";
 import { createErrorResponse } from "@shared/response";
 import type {
-  CaptainBookingExecutionCompleteRequest,
-  CaptainBookingExecutionDetail,
-  CaptainBookingExecutionStartRequest,
   CaptainCheckInRequest,
   CaptainCheckOutRequest,
-  CaptainExecutionChecklistItem,
-  CaptainExecutionChecklistTemplateItem,
   CaptainJobFilters,
   CaptainMaterial,
   CaptainMaterialUnit,
@@ -106,56 +101,6 @@ type BookingApi = {
   user_package: BookingUserPackageApi;
 };
 
-type CaptainBookingExecutionGalleryImageApi = {
-  id: number;
-  url: string | null;
-  stage: "before" | "after";
-  order: number;
-  caption: string | null;
-  alt_text: string | null;
-};
-
-type CaptainBookingExecutionFeedbackApi = {
-  id: number;
-  rated_by: string;
-  rating: number;
-  comments: string | null;
-  created_at: string;
-  updated_at: string;
-};
-
-type CaptainExecutionChecklistTemplateItemApi = {
-  id: string;
-  label: string;
-  description?: string | null;
-  required: boolean;
-  order: number;
-};
-
-type CaptainBookingExecutionDetailApi = {
-  booking_id: string;
-  booking_status: string;
-  scheduled_date: string;
-  scheduled_time: string;
-  started_at: string | null;
-  completed_at: string | null;
-  checklist_template: CaptainExecutionChecklistTemplateItemApi[] | null;
-  checklist_data: CaptainExecutionChecklistItem[] | null;
-  checklist_completed_count: number;
-  checklist_total_count: number;
-  captain_notes: string | null;
-  captain_rating_for_customer: number | null;
-  summary_snapshot: Record<string, unknown> | null;
-  metadata: Record<string, unknown> | null;
-  before_images: CaptainBookingExecutionGalleryImageApi[] | null;
-  after_images: CaptainBookingExecutionGalleryImageApi[] | null;
-  before_image_urls: string[] | null;
-  after_image_urls: string[] | null;
-  feedback: CaptainBookingExecutionFeedbackApi | null;
-  created_at: string;
-  updated_at: string;
-};
-
 type PaginatedResponse<T> = {
   results: T[];
   count: number;
@@ -178,7 +123,6 @@ const MATERIAL_UNIT_SET = new Set<string>(MATERIAL_UNITS);
 const SHIFT_STATUSES = new Set(["pending", "checked_in", "checked_out"]);
 
 const DEFAULT_SELFIE_FILENAME = "captain-selfie.jpg";
-const DEFAULT_EXECUTION_IMAGE_FILENAME_PREFIX = "booking-execution";
 const DEFAULT_JOB_PAGE_SIZE = 100;
 const DEFAULT_ESTIMATED_DURATION = 60;
 const DEFAULT_SERVICE_ICON = "";
@@ -413,70 +357,12 @@ function transformBookingToJob(api: BookingApi): Job {
   };
 }
 
-function transformExecutionDetail(
-  api: CaptainBookingExecutionDetailApi
-): CaptainBookingExecutionDetail {
-  const checklistTemplate: CaptainExecutionChecklistTemplateItem[] = (
-    api.checklist_template ?? []
-  )
-    .map((item, index) => ({
-      id: item.id,
-      label: item.label,
-      description: item.description ?? null,
-      required: Boolean(item.required),
-      order:
-        typeof item.order === "number" && Number.isFinite(item.order)
-          ? item.order
-          : index + 1,
-    }))
-    .sort((a, b) => a.order - b.order);
-
-  return {
-    booking_id: api.booking_id,
-    booking_status: api.booking_status,
-    scheduled_date: api.scheduled_date,
-    scheduled_time: api.scheduled_time,
-    started_at: api.started_at,
-    completed_at: api.completed_at,
-    checklist_template: checklistTemplate,
-    checklist_data: api.checklist_data ?? [],
-    checklist_completed_count: api.checklist_completed_count || 0,
-    checklist_total_count: api.checklist_total_count || 0,
-    captain_notes: api.captain_notes,
-    captain_rating_for_customer: api.captain_rating_for_customer,
-    summary_snapshot: api.summary_snapshot ?? {},
-    metadata: api.metadata ?? {},
-    before_images: api.before_images ?? [],
-    after_images: api.after_images ?? [],
-    before_image_urls: api.before_image_urls ?? [],
-    after_image_urls: api.after_image_urls ?? [],
-    feedback: api.feedback,
-    created_at: api.created_at,
-    updated_at: api.updated_at,
-  };
-}
-
-function createStandardizedFailureResponse<T>(
-  response: ServerActionResponse<unknown>
-): ServerActionResponse<T> {
-  return {
-    success: response.success,
-    message: response.message,
-    code: response.code,
-    data: null,
-    error: response.error,
-  } as ServerActionResponse<T>;
-}
-
-function convertDataUrlToFile(
-  dataUrl: string,
-  filenamePrefix: string
-): File | null {
-  if (!dataUrl) {
+function decodeBase64Image(base64Data: string): File | null {
+  if (!base64Data) {
     return null;
   }
 
-  const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+  const match = base64Data.match(/^data:([^;]+);base64,(.+)$/);
   if (!match) {
     return null;
   }
@@ -489,162 +375,11 @@ function convertDataUrlToFile(
 
   const byteArray = Uint8Array.from(Buffer.from(payload, "base64"));
   const extension = mime.split("/")[1] || "jpg";
-  const filename = `${filenamePrefix}-${Date.now()}-${Math.random()
-    .toString(36)
-    .slice(2, 8)}.${extension}`;
-
+  const filename = `${Date.now()}-${DEFAULT_SELFIE_FILENAME.replace(
+    /\.\w+$/,
+    `.${extension}`
+  )}`;
   return new File([byteArray], filename, { type: mime });
-}
-
-function decodeBase64Image(base64Data: string): File | null {
-  const selfiePrefix = DEFAULT_SELFIE_FILENAME.replace(/\.\w+$/, "");
-  return convertDataUrlToFile(base64Data, selfiePrefix);
-}
-
-function convertDataUrlsToFiles(
-  images: string[],
-  filenamePrefix: string,
-  errorCode: string,
-  errorMessage: string
-): ServerActionResponse<File[]> {
-  const files: File[] = [];
-  for (const image of images) {
-    const file = convertDataUrlToFile(image, filenamePrefix);
-    if (!file) {
-      return createErrorResponse<File[]>(errorMessage, errorCode, null);
-    }
-    files.push(file);
-  }
-
-  return {
-    success: true,
-    message: "Files prepared",
-    code: "SUCCESS",
-    data: files,
-    error: null,
-    showToast: false,
-  } as ServerActionResponse<File[]>;
-}
-
-export async function startCaptainBookingExecution(
-  bookingId: string,
-  metadata: Record<string, unknown> = {}
-): Promise<ServerActionResponse<CaptainBookingExecutionDetail>> {
-  const body: CaptainBookingExecutionStartRequest = {
-    metadata,
-  };
-
-  const response = await fetchWithSession<
-    CaptainBookingExecutionStartRequest,
-    CaptainBookingExecutionDetailApi
-  >(
-    apiPost,
-    `/api/service/captain/bookings/${bookingId}/start/`,
-    body
-  );
-
-  if (!response.success || !response.data) {
-    return createStandardizedFailureResponse<CaptainBookingExecutionDetail>(
-      response
-    );
-  }
-
-  return {
-    ...response,
-    data: transformExecutionDetail(response.data),
-  } as ServerActionResponse<CaptainBookingExecutionDetail>;
-}
-
-export async function completeCaptainBookingExecution(
-  bookingId: string,
-  payload: CaptainBookingExecutionCompleteRequest
-): Promise<ServerActionResponse<CaptainBookingExecutionDetail>> {
-  const beforeFilesResult = convertDataUrlsToFiles(
-    payload.beforeImages,
-    `${DEFAULT_EXECUTION_IMAGE_FILENAME_PREFIX}-before`,
-    "BOOKING_EXECUTION_BEFORE_IMAGE_INVALID",
-    "Invalid before image data. Please recapture before images."
-  );
-  if (!beforeFilesResult.success || !beforeFilesResult.data) {
-    return createStandardizedFailureResponse<CaptainBookingExecutionDetail>(
-      beforeFilesResult
-    );
-  }
-
-  const afterFilesResult = convertDataUrlsToFiles(
-    payload.afterImages,
-    `${DEFAULT_EXECUTION_IMAGE_FILENAME_PREFIX}-after`,
-    "BOOKING_EXECUTION_AFTER_IMAGE_INVALID",
-    "Invalid after image data. Please recapture after images."
-  );
-  if (!afterFilesResult.success || !afterFilesResult.data) {
-    return createStandardizedFailureResponse<CaptainBookingExecutionDetail>(
-      afterFilesResult
-    );
-  }
-
-  const formData = new FormData();
-  beforeFilesResult.data.forEach((file) => {
-    formData.append("before_images", file);
-  });
-  afterFilesResult.data.forEach((file) => {
-    formData.append("after_images", file);
-  });
-
-  formData.append("checklist", JSON.stringify(payload.checklist));
-  formData.append(
-    "captain_rating_for_customer",
-    String(payload.captainRatingForCustomer)
-  );
-
-  if (payload.captainNotes) {
-    formData.append("captain_notes", payload.captainNotes);
-  }
-
-  if (payload.summary) {
-    formData.append("summary", JSON.stringify(payload.summary));
-  }
-
-  if (payload.metadata) {
-    formData.append("metadata", JSON.stringify(payload.metadata));
-  }
-
-  const response = await fetchWithSession<FormData, CaptainBookingExecutionDetailApi>(
-    apiPost,
-    `/api/service/captain/bookings/${bookingId}/complete/`,
-    formData
-  );
-
-  if (!response.success || !response.data) {
-    return createStandardizedFailureResponse<CaptainBookingExecutionDetail>(
-      response
-    );
-  }
-
-  return {
-    ...response,
-    data: transformExecutionDetail(response.data),
-  } as ServerActionResponse<CaptainBookingExecutionDetail>;
-}
-
-export async function getCaptainBookingExecution(
-  bookingId: string
-): Promise<ServerActionResponse<CaptainBookingExecutionDetail>> {
-  const response = await fetchWithSession<undefined, CaptainBookingExecutionDetailApi>(
-    apiGet,
-    `/api/service/captain/bookings/${bookingId}/execution/`
-  );
-
-  if (!response.success || !response.data) {
-    return createStandardizedFailureResponse<CaptainBookingExecutionDetail>(
-      response
-    );
-  }
-
-  return {
-    ...response,
-    data: transformExecutionDetail(response.data),
-  } as ServerActionResponse<CaptainBookingExecutionDetail>;
 }
 
 export async function getCaptainMaterials(
@@ -796,10 +531,6 @@ export async function submitCaptainCheckOut(
   const body: Record<string, unknown> = {
     end_odometer: payload.endOdometer,
   };
-
-  if (payload.shiftDate) {
-    body.shift_date = payload.shiftDate;
-  }
 
   if (payload.notes) {
     body.notes = payload.notes;

@@ -7,11 +7,8 @@ import {
   refreshSessionIfNeeded,
 } from "@core/auth";
 import {
-  completeCaptainBookingExecution,
-  getCaptainBookingExecution,
   getCaptainShiftSummary,
   getCaptainJobs,
-  startCaptainBookingExecution,
   submitCaptainCheckIn,
   submitCaptainCheckOut,
 } from "@core/captain";
@@ -74,9 +71,6 @@ export default async function RootLayout({
             checkIn: submitCaptainCheckIn,
             checkOut: submitCaptainCheckOut,
             fetchJobs: getCaptainJobs,
-            startJobExecution: startCaptainBookingExecution,
-            completeJobExecution: completeCaptainBookingExecution,
-            getJobExecution: getCaptainBookingExecution,
           }}
         >
           {children}

@@ -27,15 +27,6 @@ const languages = [
   { code: 'hi', name: 'Hindi', nativeName: 'हिंदी' },
 ];
 
-const DEFAULT_LANGUAGE = 'en';
-
-const normalizeLanguageCode = (lang: string | undefined | null) => {
-  const baseCode = (lang || '').toLowerCase().split('-')[0];
-  return languages.some((language) => language.code === baseCode)
-    ? baseCode
-    : DEFAULT_LANGUAGE;
-};
-
 export default function ProfilePage() {
   const { captain } = useCaptain();
   const router = useRouter();
@@ -76,8 +67,6 @@ export default function ProfilePage() {
     i18n.changeLanguage(langCode);
     toast.success(`Language changed to ${languages.find(l => l.code === langCode)?.name}`);
   };
-
-  const selectedLanguage = normalizeLanguageCode(i18n.resolvedLanguage || i18n.language);
 
   const requestLocationPermission = async () => {
     try {
@@ -201,7 +190,7 @@ export default function ProfilePage() {
                   <p className="text-sm text-muted-foreground">{t('profile.settingsDesc')}</p>
                 </div>
               </div>
-              <Select value={selectedLanguage} onValueChange={handleLanguageChange}>
+              <Select value={i18n.language} onValueChange={handleLanguageChange}>
                 <SelectTrigger className="w-32">
                   <SelectValue />
                 </SelectTrigger>

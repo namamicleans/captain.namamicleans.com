@@ -12,8 +12,6 @@ import React, {
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
-  CaptainBookingExecutionCompleteRequest,
-  CaptainBookingExecutionDetail,
   Captain,
   CaptainCheckInRequest,
   CaptainCheckOutRequest,
@@ -40,17 +38,6 @@ export interface CaptainActions {
   fetchJobs: (
     params?: CaptainJobFilters
   ) => Promise<ServerActionResponse<Job[]>>;
-  startJobExecution: (
-    jobId: string,
-    metadata?: Record<string, unknown>
-  ) => Promise<ServerActionResponse<CaptainBookingExecutionDetail>>;
-  completeJobExecution: (
-    jobId: string,
-    payload: CaptainBookingExecutionCompleteRequest
-  ) => Promise<ServerActionResponse<CaptainBookingExecutionDetail>>;
-  getJobExecution: (
-    jobId: string
-  ) => Promise<ServerActionResponse<CaptainBookingExecutionDetail>>;
 }
 
 interface CaptainContextType {
@@ -74,17 +61,6 @@ interface CaptainContextType {
   setActiveJob: (job: Job | null) => void;
   updateJob: (jobId: string, updates: Partial<Job>) => void;
   completeJob: (jobId: string, afterImages: string[], notes?: string) => void;
-  startJobExecution: (
-    jobId: string,
-    metadata?: Record<string, unknown>
-  ) => Promise<ServerActionResponse<CaptainBookingExecutionDetail>>;
-  completeJobExecution: (
-    jobId: string,
-    payload: CaptainBookingExecutionCompleteRequest
-  ) => Promise<ServerActionResponse<CaptainBookingExecutionDetail>>;
-  getJobExecution: (
-    jobId: string
-  ) => Promise<ServerActionResponse<CaptainBookingExecutionDetail>>;
 }
 
 const buildCaptainProfile = (user: UserResponse["user"]): Captain => ({
@@ -157,26 +133,6 @@ export function CaptainProvider({
     mutationFn: actions.checkOut,
   });
 
-  const startJobExecutionMutation = useMutation({
-    mutationFn: ({
-      jobId,
-      metadata,
-    }: {
-      jobId: string;
-      metadata?: Record<string, unknown>;
-    }) => actions.startJobExecution(jobId, metadata),
-  });
-
-  const completeJobExecutionMutation = useMutation({
-    mutationFn: ({
-      jobId,
-      payload,
-    }: {
-      jobId: string;
-      payload: CaptainBookingExecutionCompleteRequest;
-    }) => actions.completeJobExecution(jobId, payload),
-  });
-
   const jobsQuery = useQuery({
     queryKey: jobsQueryKey,
     queryFn: async () => {
@@ -207,10 +163,7 @@ export function CaptainProvider({
   }, [jobsQuery.data]);
 
   const todayAttendance = shiftQuery.data?.shift ?? null;
-  const materials = useMemo(
-    () => shiftQuery.data?.materials ?? [],
-    [shiftQuery.data?.materials]
-  );
+  const materials = shiftQuery.data?.materials ?? [];
 
   const refreshShift = useCallback(async () => {
     await queryClient.invalidateQueries({ queryKey: shiftQueryKey });
@@ -261,68 +214,6 @@ export function CaptainProvider({
     setActiveJob(null);
   }, [updateJob]);
 
-  const startJobExecution = useCallback(
-    async (jobId: string, metadata?: Record<string, unknown>) => {
-      const result = await startJobExecutionMutation.mutateAsync({
-        jobId,
-        metadata,
-      });
-
-      if (result.success && result.data) {
-        updateJob(jobId, {
-          status: "ongoing",
-          startedAt: result.data.started_at || new Date().toISOString(),
-        });
-        await queryClient.invalidateQueries({ queryKey: jobsQueryKey });
-      }
-
-      return result;
-    },
-    [
-      startJobExecutionMutation,
-      updateJob,
-      queryClient,
-      jobsQueryKey,
-    ]
-  );
-
-  const completeJobExecution = useCallback(
-    async (jobId: string, payload: CaptainBookingExecutionCompleteRequest) => {
-      const result = await completeJobExecutionMutation.mutateAsync({
-        jobId,
-        payload,
-      });
-
-      if (result.success && result.data) {
-        updateJob(jobId, {
-          status: "completed",
-          beforeImages: payload.beforeImages,
-          afterImages: payload.afterImages,
-          completedSteps: payload.checklist
-            .filter((item) => item.completed)
-            .map((item) => item.id),
-          completedAt: result.data.completed_at || new Date().toISOString(),
-          notes: payload.captainNotes,
-        });
-        setActiveJob(null);
-        await queryClient.invalidateQueries({ queryKey: jobsQueryKey });
-      }
-
-      return result;
-    },
-    [
-      completeJobExecutionMutation,
-      updateJob,
-      queryClient,
-      jobsQueryKey,
-    ]
-  );
-
-  const getJobExecution = useCallback(
-    async (jobId: string) => actions.getJobExecution(jobId),
-    [actions]
-  );
-
   // Compute context value - always called, regardless of auth state
   const contextValue = useMemo(
     () => ({
@@ -344,9 +235,6 @@ export function CaptainProvider({
       setActiveJob,
       updateJob,
       completeJob,
-      startJobExecution,
-      completeJobExecution,
-      getJobExecution,
     }),
     [
       captain,
@@ -364,11 +252,13 @@ export function CaptainProvider({
       refreshShift,
       updateJob,
       completeJob,
-      startJobExecution,
-      completeJobExecution,
-      getJobExecution,
     ]
   );
+
+  // If no user, just render children without context (e.g., on /login page)
+  if (!initialUser || !captain) {
+    return <>{children}</>;
+  }
 
   return (
     <CaptainContext.Provider value={contextValue}>
