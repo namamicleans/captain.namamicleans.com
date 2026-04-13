@@ -32,7 +32,7 @@
         "./src/shared/*"
       ]
     },
-    "baseUrl": "/",
+    "baseUrl": ".",
     "target": "ES2017",
     "ignoreDeprecations": "5.0"
   },
