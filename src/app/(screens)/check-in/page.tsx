@@ -386,6 +386,12 @@ export default function CheckInPage() {
                 minImages={1}
                 maxImages={1}
                 cameraOnly={true}
+                compress={{
+                  maxWidth: 960,
+                  maxHeight: 960,
+                  quality: 0.72,
+                  mimeType: "image/jpeg",
+                }}
                 label="Capture Selfie"
                 onImageCaptured={handleSelfieCaptured}
               />

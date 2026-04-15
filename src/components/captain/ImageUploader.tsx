@@ -14,6 +14,12 @@ interface ImageUploaderProps {
   cameraOnly?: boolean;
   label?: string;
   onImageCaptured?: (payload: { dataUrl: string; capturedAt: string }) => void;
+  compress?: {
+    maxWidth: number;
+    maxHeight: number;
+    quality: number;
+    mimeType?: string;
+  };
 }
 
 export function ImageUploader({
@@ -24,9 +30,53 @@ export function ImageUploader({
   cameraOnly = true,
   label = "Capture Photos",
   onImageCaptured,
+  compress,
 }: ImageUploaderProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isCapturing, setIsCapturing] = useState(false);
+
+  const readFileAsDataUrl = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (event) => resolve(event.target?.result as string);
+      reader.onerror = () => reject(new Error("Failed to read image."));
+      reader.readAsDataURL(file);
+    });
+
+  const compressImage = async (file: File, options: NonNullable<ImageUploaderProps["compress"]>) => {
+    const objectUrl = URL.createObjectURL(file);
+
+    try {
+      const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error("Unable to load image for compression."));
+        img.src = objectUrl;
+      });
+
+      const maxWidth = options.maxWidth;
+      const maxHeight = options.maxHeight;
+      const ratio = Math.min(maxWidth / image.width, maxHeight / image.height, 1);
+      const targetWidth = Math.round(image.width * ratio);
+      const targetHeight = Math.round(image.height * ratio);
+
+      const canvas = document.createElement("canvas");
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+
+      const context = canvas.getContext("2d");
+      if (!context) {
+        throw new Error("Canvas context unavailable for compression.");
+      }
+
+      context.drawImage(image, 0, 0, targetWidth, targetHeight);
+
+      const mimeType = options.mimeType || "image/jpeg";
+      return canvas.toDataURL(mimeType, options.quality);
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+    }
+  };
 
   const handleCapture = () => {
     if (images.length >= maxImages) {
@@ -36,25 +86,34 @@ export function ImageUploader({
     fileInputRef.current?.click();
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setIsCapturing(true);
-    
-    // Read captured file as base64 string
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const base64 = event.target?.result as string;
-      onImagesChange([...images, base64]);
-      onImageCaptured?.({ dataUrl: base64, capturedAt: new Date().toISOString() });
+    let base64: string | null = null;
+
+    try {
+      if (compress) {
+        base64 = await compressImage(file, compress);
+      } else {
+        base64 = await readFileAsDataUrl(file);
+      }
+    } catch (error) {
+      console.error("Image processing failed", error);
+      toast.error("Unable to process image. Please try again.");
+    } finally {
       setIsCapturing(false);
-      toast.success('Photo captured successfully');
-    };
-    reader.readAsDataURL(file);
-    
-    // Reset input
-    e.target.value = '';
+      e.target.value = '';
+    }
+
+    if (!base64) {
+      return;
+    }
+
+    onImagesChange([...images, base64]);
+    onImageCaptured?.({ dataUrl: base64, capturedAt: new Date().toISOString() });
+    toast.success('Photo captured successfully');
   };
 
   const removeImage = (index: number) => {
