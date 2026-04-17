@@ -1,10 +1,17 @@
 "use client";
 
 import { useState, useRef } from 'react';
-import Image from 'next/image';
+import NextImage from 'next/image';
 import { Camera, X, Check } from 'lucide-react';
 import { cn } from '@shared/utils';
 import { toast } from 'sonner';
+
+interface ImageCompressionOptions {
+  maxWidth?: number;
+  maxHeight?: number;
+  quality?: number;
+  mimeType?: string;
+}
 
 interface ImageUploaderProps {
   images: string[];
@@ -13,13 +20,68 @@ interface ImageUploaderProps {
   maxImages: number;
   cameraOnly?: boolean;
   label?: string;
+  compress?: ImageCompressionOptions;
   onImageCaptured?: (payload: { dataUrl: string; capturedAt: string }) => void;
-  compress?: {
-    maxWidth: number;
-    maxHeight: number;
-    quality: number;
-    mimeType?: string;
-  };
+}
+
+async function readFileAsDataUrl(file: Blob): Promise<string> {
+  return await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (event) => resolve((event.target?.result as string) || '');
+    reader.onerror = () => reject(new Error('Unable to read image file.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function compressImage(file: File, options?: ImageCompressionOptions): Promise<string> {
+  if (!options) {
+    return readFileAsDataUrl(file);
+  }
+
+  const {
+    maxWidth = 1280,
+    maxHeight = 1280,
+    quality = 0.8,
+    mimeType = 'image/jpeg',
+  } = options;
+
+  const objectUrl = URL.createObjectURL(file);
+
+  try {
+    const sourceImage = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const browserImage = new window.Image();
+      browserImage.onload = () => resolve(browserImage);
+      browserImage.onerror = () => reject(new Error('Unable to load image for compression.'));
+      browserImage.src = objectUrl;
+    });
+
+    const widthRatio = maxWidth / sourceImage.width;
+    const heightRatio = maxHeight / sourceImage.height;
+    const resizeRatio = Math.min(widthRatio, heightRatio, 1);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(sourceImage.width * resizeRatio));
+    canvas.height = Math.max(1, Math.round(sourceImage.height * resizeRatio));
+
+    const context = canvas.getContext('2d');
+    if (!context) {
+      return readFileAsDataUrl(file);
+    }
+
+    context.drawImage(sourceImage, 0, 0, canvas.width, canvas.height);
+
+    const blob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob(resolve, mimeType, quality);
+    });
+
+    if (!blob) {
+      return readFileAsDataUrl(file);
+    }
+
+    return readFileAsDataUrl(blob);
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
 }
 
 export function ImageUploader({
@@ -29,54 +91,11 @@ export function ImageUploader({
   maxImages,
   cameraOnly = true,
   label = "Capture Photos",
-  onImageCaptured,
   compress,
+  onImageCaptured,
 }: ImageUploaderProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isCapturing, setIsCapturing] = useState(false);
-
-  const readFileAsDataUrl = (file: File): Promise<string> =>
-    new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (event) => resolve(event.target?.result as string);
-      reader.onerror = () => reject(new Error("Failed to read image."));
-      reader.readAsDataURL(file);
-    });
-
-  const compressImage = async (file: File, options: NonNullable<ImageUploaderProps["compress"]>) => {
-    const objectUrl = URL.createObjectURL(file);
-
-    try {
-      const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => resolve(img);
-        img.onerror = () => reject(new Error("Unable to load image for compression."));
-        img.src = objectUrl;
-      });
-
-      const maxWidth = options.maxWidth;
-      const maxHeight = options.maxHeight;
-      const ratio = Math.min(maxWidth / image.width, maxHeight / image.height, 1);
-      const targetWidth = Math.round(image.width * ratio);
-      const targetHeight = Math.round(image.height * ratio);
-
-      const canvas = document.createElement("canvas");
-      canvas.width = targetWidth;
-      canvas.height = targetHeight;
-
-      const context = canvas.getContext("2d");
-      if (!context) {
-        throw new Error("Canvas context unavailable for compression.");
-      }
-
-      context.drawImage(image, 0, 0, targetWidth, targetHeight);
-
-      const mimeType = options.mimeType || "image/jpeg";
-      return canvas.toDataURL(mimeType, options.quality);
-    } finally {
-      URL.revokeObjectURL(objectUrl);
-    }
-  };
 
   const handleCapture = () => {
     if (images.length >= maxImages) {
@@ -91,29 +110,19 @@ export function ImageUploader({
     if (!file) return;
 
     setIsCapturing(true);
-    let base64: string | null = null;
 
     try {
-      if (compress) {
-        base64 = await compressImage(file, compress);
-      } else {
-        base64 = await readFileAsDataUrl(file);
-      }
+      const base64 = await compressImage(file, compress);
+      onImagesChange([...images, base64]);
+      onImageCaptured?.({ dataUrl: base64, capturedAt: new Date().toISOString() });
+      toast.success('Photo captured successfully');
     } catch (error) {
-      console.error("Image processing failed", error);
-      toast.error("Unable to process image. Please try again.");
+      console.error('Failed to process image', error);
+      toast.error('Unable to process photo. Please try again.');
     } finally {
       setIsCapturing(false);
       e.target.value = '';
     }
-
-    if (!base64) {
-      return;
-    }
-
-    onImagesChange([...images, base64]);
-    onImageCaptured?.({ dataUrl: base64, capturedAt: new Date().toISOString() });
-    toast.success('Photo captured successfully');
   };
 
   const removeImage = (index: number) => {
@@ -143,7 +152,7 @@ export function ImageUploader({
       <div className="grid grid-cols-3 gap-3">
         {images.map((image, index) => (
           <div key={index} className="relative aspect-square rounded-lg overflow-hidden bg-muted">
-            <Image
+            <NextImage
               src={image}
               alt={`Captured ${index + 1}`}
               fill

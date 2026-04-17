@@ -7,10 +7,20 @@ import {
   refreshSessionIfNeeded,
 } from "@core/auth";
 import {
+  completeCaptainJobExecution,
+  createCaptainLeaveDraft,
   getCaptainShiftSummary,
   getCaptainJobs,
+  getCaptainJobExecution,
+  getCaptainLeaveBalance,
+  getCaptainLeaveDetail,
+  getCaptainLeaves,
+  getCaptainTimesheet,
+  startCaptainJobExecution,
   submitCaptainCheckIn,
   submitCaptainCheckOut,
+  submitCaptainLeave,
+  withdrawCaptainLeave,
 } from "@core/captain";
 
 export const metadata: Metadata = {
@@ -71,6 +81,16 @@ export default async function RootLayout({
             checkIn: submitCaptainCheckIn,
             checkOut: submitCaptainCheckOut,
             fetchJobs: getCaptainJobs,
+            startJobExecution: startCaptainJobExecution,
+            completeJobExecution: completeCaptainJobExecution,
+            getJobExecution: getCaptainJobExecution,
+            fetchLeaveBalance: getCaptainLeaveBalance,
+            fetchLeaves: getCaptainLeaves,
+            createLeaveDraft: createCaptainLeaveDraft,
+            getLeaveDetail: getCaptainLeaveDetail,
+            submitLeave: submitCaptainLeave,
+            withdrawLeave: withdrawCaptainLeave,
+            fetchTimesheet: getCaptainTimesheet,
           }}
         >
           {children}

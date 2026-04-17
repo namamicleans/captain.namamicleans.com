@@ -5,8 +5,17 @@ import { createErrorResponse } from "@shared/response";
 import type {
   CaptainCheckInRequest,
   CaptainCheckOutRequest,
+  CaptainExecutionChecklistTemplateItem,
+  CaptainJobExecution,
+  CaptainJobExecutionCompleteRequest,
+  CaptainJobExecutionStartRequest,
   CaptainJobFilters,
+  CaptainLeaveBalance,
+  CaptainLeaveDraftRequest,
+  CaptainLeaveRequest,
   CaptainMaterial,
+  CaptainTimesheet,
+  CaptainTimesheetFilters,
   CaptainMaterialUnit,
   CaptainShiftLog,
   CaptainShiftMaterialSnapshot,
@@ -109,6 +118,42 @@ type PaginatedResponse<T> = {
   total_pages: number;
   has_next: boolean;
   has_previous: boolean;
+};
+
+type ExecutionChecklistItemApi = {
+  id: string;
+  label: string;
+  description?: string | null;
+  required?: boolean;
+  completed?: boolean;
+  order?: number;
+};
+
+type ExecutionImageApi = {
+  id: number;
+  image?: string | null;
+  url?: string | null;
+  order: number;
+};
+
+type JobExecutionApi = {
+  id: number;
+  booking_id: string;
+  started_at: string | null;
+  completed_at: string | null;
+  checklist?: ExecutionChecklistItemApi[];
+  checklist_data?: ExecutionChecklistItemApi[];
+  checklist_template?: ExecutionChecklistItemApi[];
+  checklist_completed_count: number;
+  checklist_total_count: number;
+  captain_notes: string | null;
+  captain_rating_for_customer: number | null;
+  summary_snapshot: Record<string, unknown> | null;
+  metadata: Record<string, unknown> | null;
+  before_images?: ExecutionImageApi[];
+  after_images?: ExecutionImageApi[];
+  before_image_urls?: string[];
+  after_image_urls?: string[];
 };
 
 const MATERIAL_UNITS: readonly CaptainMaterialUnit[] = [
@@ -357,7 +402,64 @@ function transformBookingToJob(api: BookingApi): Job {
   };
 }
 
-function decodeBase64Image(base64Data: string): File | null {
+function transformExecutionChecklistItem(
+  item: ExecutionChecklistItemApi
+): CaptainExecutionChecklistTemplateItem {
+  return {
+    id: item.id,
+    label: item.label,
+    description: item.description ?? null,
+    required: Boolean(item.required),
+    completed: Boolean(item.completed),
+    order: item.order,
+  };
+}
+
+function transformExecutionImage(item: ExecutionImageApi) {
+  return {
+    id: item.id,
+    url: item.url ?? item.image ?? null,
+    order: item.order,
+  };
+}
+
+function transformJobExecution(api: JobExecutionApi): CaptainJobExecution {
+  const beforeImages = (api.before_images ?? []).map(transformExecutionImage);
+  const afterImages = (api.after_images ?? []).map(transformExecutionImage);
+
+  return {
+    id: api.id,
+    booking_id: api.booking_id,
+    started_at: api.started_at ?? null,
+    completed_at: api.completed_at ?? null,
+    checklist_data: (api.checklist_data ?? api.checklist ?? []).map(
+      transformExecutionChecklistItem
+    ),
+    checklist_template: (api.checklist_template ?? []).map(
+      transformExecutionChecklistItem
+    ),
+    checklist_completed_count: api.checklist_completed_count ?? 0,
+    checklist_total_count: api.checklist_total_count ?? 0,
+    captain_notes: api.captain_notes ?? null,
+    captain_rating_for_customer: api.captain_rating_for_customer ?? null,
+    summary_snapshot: api.summary_snapshot ?? null,
+    metadata: api.metadata ?? null,
+    before_images: beforeImages,
+    after_images: afterImages,
+    before_image_urls:
+      api.before_image_urls ??
+      beforeImages
+        .map((item) => item.url)
+        .filter((item): item is string => Boolean(item)),
+    after_image_urls:
+      api.after_image_urls ??
+      afterImages
+        .map((item) => item.url)
+        .filter((item): item is string => Boolean(item)),
+  };
+}
+
+function decodeBase64Image(base64Data: string, filename = DEFAULT_SELFIE_FILENAME): File | null {
   if (!base64Data) {
     return null;
   }
@@ -375,11 +477,20 @@ function decodeBase64Image(base64Data: string): File | null {
 
   const byteArray = Uint8Array.from(Buffer.from(payload, "base64"));
   const extension = mime.split("/")[1] || "jpg";
-  const filename = `${Date.now()}-${DEFAULT_SELFIE_FILENAME.replace(
+  const filenameWithExtension = `${Date.now()}-${filename.replace(
     /\.\w+$/,
     `.${extension}`
   )}`;
-  return new File([byteArray], filename, { type: mime });
+  return new File([byteArray], filenameWithExtension, { type: mime });
+}
+
+function appendBase64Images(formData: FormData, fieldName: string, images: string[]) {
+  images.forEach((image, index) => {
+    const file = decodeBase64Image(image, `${fieldName}-${index + 1}.jpg`);
+    if (file) {
+      formData.append(fieldName, file);
+    }
+  });
 }
 
 export async function getCaptainMaterials(
@@ -621,4 +732,269 @@ export async function getCaptainJobs(
     data: jobs,
     showToast: false,
   } as ServerActionResponse<Job[]>;
+}
+
+export async function startCaptainJobExecution(
+  bookingId: string,
+  payload: CaptainJobExecutionStartRequest = {}
+): Promise<ServerActionResponse<CaptainJobExecution>> {
+  const body = {
+    metadata: {
+      ...(payload.metadata || {}),
+      ...(payload.source ? { source: payload.source } : {}),
+    },
+  };
+
+  const result = await fetchWithSession<Record<string, unknown>, JobExecutionApi>(
+    apiPost,
+    `/api/service/captain/bookings/${bookingId}/start/`,
+    body
+  );
+
+  if (!result.success || !result.data) {
+    return {
+      success: result.success,
+      message: result.message,
+      code: result.code,
+      data: null,
+      error: result.error,
+    } as ServerActionResponse<CaptainJobExecution>;
+  }
+
+  return {
+    ...result,
+    data: transformJobExecution(result.data),
+  } as ServerActionResponse<CaptainJobExecution>;
+}
+
+export async function completeCaptainJobExecution(
+  bookingId: string,
+  payload: CaptainJobExecutionCompleteRequest
+): Promise<ServerActionResponse<CaptainJobExecution>> {
+  const formData = new FormData();
+  appendBase64Images(formData, 'before_images', payload.beforeImages);
+  appendBase64Images(formData, 'after_images', payload.afterImages);
+  formData.append('checklist', JSON.stringify(payload.checklist));
+  formData.append(
+    'captain_rating_for_customer',
+    String(payload.captainRatingForCustomer)
+  );
+
+  if (payload.captainNotes) {
+    formData.append('captain_notes', payload.captainNotes);
+  }
+
+  if (payload.summary) {
+    formData.append('summary', JSON.stringify(payload.summary));
+  }
+
+  if (payload.metadata) {
+    formData.append('metadata', JSON.stringify(payload.metadata));
+  }
+
+  const result = await fetchWithSession<FormData, JobExecutionApi>(
+    apiPost,
+    `/api/service/captain/bookings/${bookingId}/complete/`,
+    formData
+  );
+
+  if (!result.success || !result.data) {
+    return {
+      success: result.success,
+      message: result.message,
+      code: result.code,
+      data: null,
+      error: result.error,
+    } as ServerActionResponse<CaptainJobExecution>;
+  }
+
+  return {
+    ...result,
+    data: transformJobExecution(result.data),
+  } as ServerActionResponse<CaptainJobExecution>;
+}
+
+export async function getCaptainJobExecution(
+  bookingId: string
+): Promise<ServerActionResponse<CaptainJobExecution>> {
+  const result = await fetchWithSession<undefined, JobExecutionApi>(
+    apiGet,
+    `/api/service/captain/bookings/${bookingId}/execution/`
+  );
+
+  if (!result.success || !result.data) {
+    return {
+      success: result.success,
+      message: result.message,
+      code: result.code,
+      data: null,
+      error: result.error,
+    } as ServerActionResponse<CaptainJobExecution>;
+  }
+
+  return {
+    ...result,
+    data: transformJobExecution(result.data),
+  } as ServerActionResponse<CaptainJobExecution>;
+}
+
+export async function getCaptainLeaveBalance(): Promise<
+  ServerActionResponse<CaptainLeaveBalance>
+> {
+  const result = await fetchWithSession<undefined, CaptainLeaveBalance>(
+    apiGet,
+    "/api/service/captain/leave-balance/"
+  );
+
+  if (!result.success || !result.data) {
+    return {
+      success: result.success,
+      message: result.message,
+      code: result.code,
+      data: null,
+      error: result.error,
+    } as ServerActionResponse<CaptainLeaveBalance>;
+  }
+
+  return result as ServerActionResponse<CaptainLeaveBalance>;
+}
+
+export async function getCaptainLeaves(): Promise<
+  ServerActionResponse<CaptainLeaveRequest[]>
+> {
+  const result = await fetchWithSession<undefined, CaptainLeaveRequest[]>(
+    apiGet,
+    "/api/service/captain/leaves/"
+  );
+
+  if (!result.success || !result.data) {
+    return {
+      success: result.success,
+      message: result.message,
+      code: result.code,
+      data: null,
+      error: result.error,
+    } as ServerActionResponse<CaptainLeaveRequest[]>;
+  }
+
+  return result as ServerActionResponse<CaptainLeaveRequest[]>;
+}
+
+export async function createCaptainLeaveDraft(
+  payload: CaptainLeaveDraftRequest
+): Promise<ServerActionResponse<CaptainLeaveRequest>> {
+  const result = await fetchWithSession<CaptainLeaveDraftRequest, CaptainLeaveRequest>(
+    apiPost,
+    "/api/service/captain/leaves/",
+    payload
+  );
+
+  if (!result.success || !result.data) {
+    return {
+      success: result.success,
+      message: result.message,
+      code: result.code,
+      data: null,
+      error: result.error,
+    } as ServerActionResponse<CaptainLeaveRequest>;
+  }
+
+  return result as ServerActionResponse<CaptainLeaveRequest>;
+}
+
+export async function getCaptainLeaveDetail(
+  leaveId: number
+): Promise<ServerActionResponse<CaptainLeaveRequest>> {
+  const result = await fetchWithSession<undefined, CaptainLeaveRequest>(
+    apiGet,
+    `/api/service/captain/leaves/${leaveId}/`
+  );
+
+  if (!result.success || !result.data) {
+    return {
+      success: result.success,
+      message: result.message,
+      code: result.code,
+      data: null,
+      error: result.error,
+    } as ServerActionResponse<CaptainLeaveRequest>;
+  }
+
+  return result as ServerActionResponse<CaptainLeaveRequest>;
+}
+
+export async function submitCaptainLeave(
+  leaveId: number
+): Promise<ServerActionResponse<CaptainLeaveRequest>> {
+  const result = await fetchWithSession<Record<string, never>, CaptainLeaveRequest>(
+    apiPost,
+    `/api/service/captain/leaves/${leaveId}/submit/`,
+    {}
+  );
+
+  if (!result.success || !result.data) {
+    return {
+      success: result.success,
+      message: result.message,
+      code: result.code,
+      data: null,
+      error: result.error,
+    } as ServerActionResponse<CaptainLeaveRequest>;
+  }
+
+  return result as ServerActionResponse<CaptainLeaveRequest>;
+}
+
+export async function withdrawCaptainLeave(
+  leaveId: number
+): Promise<ServerActionResponse<CaptainLeaveRequest>> {
+  const result = await fetchWithSession<Record<string, never>, CaptainLeaveRequest>(
+    apiPost,
+    `/api/service/captain/leaves/${leaveId}/withdraw/`,
+    {}
+  );
+
+  if (!result.success || !result.data) {
+    return {
+      success: result.success,
+      message: result.message,
+      code: result.code,
+      data: null,
+      error: result.error,
+    } as ServerActionResponse<CaptainLeaveRequest>;
+  }
+
+  return result as ServerActionResponse<CaptainLeaveRequest>;
+}
+
+export async function getCaptainTimesheet(
+  filters: CaptainTimesheetFilters = {}
+): Promise<ServerActionResponse<CaptainTimesheet>> {
+  const search = new URLSearchParams();
+  if (filters.startDate) {
+    search.set("start_date", filters.startDate);
+  }
+  if (filters.endDate) {
+    search.set("end_date", filters.endDate);
+  }
+
+  const endpoint = `/api/service/captain/timesheet/${
+    search.toString() ? `?${search.toString()}` : ""
+  }`;
+  const result = await fetchWithSession<undefined, CaptainTimesheet>(
+    apiGet,
+    endpoint
+  );
+
+  if (!result.success || !result.data) {
+    return {
+      success: result.success,
+      message: result.message,
+      code: result.code,
+      data: null,
+      error: result.error,
+    } as ServerActionResponse<CaptainTimesheet>;
+  }
+
+  return result as ServerActionResponse<CaptainTimesheet>;
 }

@@ -74,95 +74,6 @@ export interface CaptainCheckOutRequest {
   shiftDate?: string;
 }
 
-export interface CaptainExecutionChecklistTemplateItem {
-  id: string;
-  label: string;
-  description: string | null;
-  required: boolean;
-}
-
-export interface CaptainJobExecutionChecklistItem {
-  id: string;
-  label: string;
-  required: boolean;
-  completed: boolean;
-}
-
-export interface CaptainJobExecutionImage {
-  id: string;
-  url: string | null;
-}
-
-export interface CaptainJobExecution {
-  checklist_template: CaptainExecutionChecklistTemplateItem[];
-  checklist_data: CaptainJobExecutionChecklistItem[];
-  before_images: CaptainJobExecutionImage[];
-  after_images: CaptainJobExecutionImage[];
-  before_image_urls: string[];
-  after_image_urls: string[];
-  captain_notes: string | null;
-  captain_rating_for_customer: number | null;
-  started_at: string | null;
-}
-
-export interface CaptainCompleteJobExecutionRequest {
-  beforeImages: string[];
-  afterImages: string[];
-  checklist: CaptainJobExecutionChecklistItem[];
-  captainRatingForCustomer?: number;
-  captainNotes?: string;
-  summary?: Record<string, unknown>;
-  metadata?: Record<string, unknown>;
-}
-
-export type CaptainLeaveStatus =
-  | "draft"
-  | "submitted"
-  | "approved"
-  | "rejected"
-  | "withdrawn"
-  | "cancelled";
-
-export interface CaptainLeaveRequest {
-  id: number;
-  request_code: string;
-  start_date: string;
-  end_date: string;
-  status: CaptainLeaveStatus;
-  leave_units: number;
-  reason: string | null;
-}
-
-export interface CaptainLeaveBalance {
-  available_units: number;
-  pending_units: number;
-  used_units: number;
-}
-
-export interface CaptainLeaveDraftRequest {
-  start_date: string;
-  end_date: string;
-  start_time?: string;
-  end_time?: string;
-  leave_units?: string;
-  reason?: string;
-  manager_note?: string;
-}
-
-export interface CaptainTimesheet {
-  shifts: Array<{
-    shiftDate: string;
-    checkInTime: string | null;
-    checkOutTime: string | null;
-  }>;
-  leave_requests: Array<{
-    id: number;
-    start_date: string;
-    end_date: string;
-    status: CaptainLeaveStatus;
-  }>;
-}
-
 export interface Captain {
   id: string;
   name: string;
@@ -179,6 +90,62 @@ export interface CaptainJobFilters {
   status?: string;
   page?: number;
   pageSize?: number;
+}
+
+export interface CaptainExecutionChecklistTemplateItem {
+  id: string;
+  label: string;
+  description?: string | null;
+  required: boolean;
+  completed?: boolean;
+  order?: number;
+}
+
+export interface CaptainExecutionImageItem {
+  id: number;
+  url: string | null;
+  order: number;
+}
+
+export interface CaptainJobExecution {
+  id: number;
+  booking_id: string;
+  started_at: string | null;
+  completed_at: string | null;
+  checklist_data: CaptainExecutionChecklistTemplateItem[];
+  checklist_template: CaptainExecutionChecklistTemplateItem[];
+  checklist_completed_count: number;
+  checklist_total_count: number;
+  captain_notes: string | null;
+  captain_rating_for_customer: number | null;
+  summary_snapshot: Record<string, unknown> | null;
+  metadata: Record<string, unknown> | null;
+  before_images: CaptainExecutionImageItem[];
+  after_images: CaptainExecutionImageItem[];
+  before_image_urls: string[];
+  after_image_urls: string[];
+}
+
+export interface CaptainJobExecutionStartRequest {
+  source?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface CaptainJobExecutionChecklistItem {
+  id: string;
+  label?: string;
+  required?: boolean;
+  completed: boolean;
+}
+
+export interface CaptainJobExecutionCompleteRequest {
+  beforeImages: string[];
+  afterImages: string[];
+  checklist: CaptainJobExecutionChecklistItem[];
+  captainRatingForCustomer: number;
+  captainNotes?: string;
+  summary?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface Job {
@@ -211,6 +178,65 @@ export interface Earnings {
   totalJobs: number;
   incentives: number;
   deductions: number;
+}
+
+export interface CaptainLeaveRequest {
+  id: number;
+  request_code: string;
+  captain?: number | null;
+  captain_label?: string | null;
+  created_by?: number | null;
+  created_by_label?: string | null;
+  application_mode?: string | null;
+  status: string;
+  emergency_lock_active: boolean;
+  start_date: string;
+  end_date: string;
+  start_time?: string | null;
+  end_time?: string | null;
+  leave_units: number;
+  reason?: string | null;
+  manager_note?: string | null;
+  submitted_at?: string | null;
+  decision_at?: string | null;
+  is_time_bound?: boolean;
+  total_days?: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface CaptainLeaveDraftRequest {
+  start_date: string;
+  end_date: string;
+  start_time?: string;
+  end_time?: string;
+  leave_units?: string;
+  reason?: string;
+  manager_note?: string;
+}
+
+export interface CaptainLeaveBalance {
+  id: number;
+  captain?: number | null;
+  captain_label?: string | null;
+  total_units: number;
+  pending_units: number;
+  used_units: number;
+  available_units: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface CaptainTimesheetFilters {
+  startDate?: string;
+  endDate?: string;
+}
+
+export interface CaptainTimesheet {
+  start_date: string;
+  end_date: string;
+  shifts: CaptainShiftLog[];
+  leave_requests: CaptainLeaveRequest[];
 }
 
 export interface FuelEntry {
