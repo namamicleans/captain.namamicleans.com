@@ -11,6 +11,8 @@ export default function JobsPage() {
   const { jobs, isCheckedIn } = useCaptain();
   const router = useRouter();
 
+  console.log('Jobs data:', jobs);
+
   const scheduledJobs = jobs.filter(job => job.status === 'scheduled');
   const ongoingJobs = jobs.filter(job => job.status === 'ongoing');
   const completedJobs = jobs.filter(job => job.status === 'completed');

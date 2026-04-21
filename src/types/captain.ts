@@ -153,6 +153,10 @@ export interface Job {
   serviceType: string;
   serviceName: string;
   serviceIcon: string;
+  quantityDisplay: string;
+  quantity: number;
+  quantityUnit?: string;
+  isQuantityBased: boolean;
   customerName: string;
   customerPhone: string;
   address: string;

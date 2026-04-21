@@ -1,9 +1,15 @@
 "use client";
 
 import { Check } from 'lucide-react';
-import { ServiceStep } from '@shared/config/serviceConfig';
 import { cn } from '@shared/utils';
 import { Progress } from '@/components/ui/progress';
+
+interface ServiceStep {
+  id: string;
+  title: string;
+  instruction: string;
+  required: boolean;
+}
 
 interface ServiceStepsChecklistProps {
   steps: ServiceStep[];

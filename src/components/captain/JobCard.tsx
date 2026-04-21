@@ -1,6 +1,6 @@
 "use client";
 
-import { MapPin, Clock, Navigation, Play, CheckCircle2, Phone, Car, Sofa, Home, Sparkles, User } from 'lucide-react';
+import { MapPin, Clock, Navigation, Play, CheckCircle2, Phone, Car, Sofa, Home, Sparkles, User, Package } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -101,6 +101,14 @@ export function JobCard({ job, onNavigate, onStart }: JobCardProps) {
             </div>
             <span className="text-muted">•</span>
             <span>{job.estimatedDuration} mins</span>
+          </div>
+
+          {/* Quantity */}
+          <div className="flex items-center gap-1.5 mb-2 text-sm text-muted-foreground">
+            <Package className="h-4 w-4" />
+            <Badge variant="outline" className="text-xs">
+              {job.quantityDisplay}
+            </Badge>
           </div>
           
           {/* Address */}

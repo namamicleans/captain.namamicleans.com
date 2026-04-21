@@ -93,6 +93,10 @@ type BookingApi = {
   booking_id: string;
   service: string;
   service_code?: string | null;
+  quantity?: string | number | null;
+  quantity_unit?: string | null;
+  quantity_display?: string | null;
+  is_quantity_based?: boolean;
   scheduled_date: string;
   scheduled_time: string;
   status: string;
@@ -324,6 +328,21 @@ function parseAmount(value?: string | number | null): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function buildQuantityDisplay(booking: BookingApi): string {
+  const quantityDisplay = booking.quantity_display?.toString().trim();
+  if (quantityDisplay) {
+    return quantityDisplay;
+  }
+
+  const quantity = parseAmount(booking.quantity);
+  if (!Number.isFinite(quantity) || quantity <= 0) {
+    return '-';
+  }
+
+  const quantityUnit = booking.quantity_unit?.toString().trim();
+  return quantityUnit ? `${quantity} ${quantityUnit}` : `${quantity}`;
+}
+
 function formatAddress(booking: BookingApi): string {
   const parts = [
     booking.address_line_1,
@@ -382,6 +401,10 @@ function transformBookingToJob(api: BookingApi): Job {
       api.user_package?.package_plan?.service ||
       "Cleaning Service",
     serviceIcon: DEFAULT_SERVICE_ICON,
+    quantityDisplay: buildQuantityDisplay(api),
+    quantity: parseAmount(api.quantity),
+    quantityUnit: api.quantity_unit?.toString().trim() || undefined,
+    isQuantityBased: Boolean(api.is_quantity_based),
     customerName: api.user?.name || "Customer",
     customerPhone: api.user?.phone_number || "",
     address: formatAddress(api),

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Navigation, Phone, CheckCircle2, PartyPopper } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -12,7 +12,6 @@ import { CustomerRating } from '@/components/captain/CustomerRating';
 import { Spinner } from '@/components/ui/spinner';
 import { useCaptain } from '@/context/CaptainContext';
 import { useRouter, useParams } from 'next/navigation';
-import { serviceConfigs } from '@shared/config/serviceConfig';
 import type { CaptainExecutionChecklistTemplateItem } from '@/types/captain';
 import { toast } from 'sonner';
 import {
@@ -27,6 +26,16 @@ import {
 } from '@/components/ui/alert-dialog';
 
 const executionSteps = ['Before', 'Service', 'After', 'Complete'];
+const MIN_REQUIRED_BEFORE_IMAGES = 2;
+const MIN_REQUIRED_AFTER_IMAGES = 2;
+const MAX_ALLOWED_IMAGES = 10;
+
+type ChecklistStep = {
+  id: string;
+  title: string;
+  instruction: string;
+  required: boolean;
+};
 
 export default function JobExecutionPage() {
   const params = useParams();
@@ -41,7 +50,6 @@ export default function JobExecutionPage() {
   } = useCaptain();
 
   const job = jobs.find(j => j.id === jobId);
-  const serviceConfig = job ? serviceConfigs[job.serviceType] : null;
 
   const [currentStep, setCurrentStep] = useState(0);
   const [beforeImages, setBeforeImages] = useState<string[]>(job?.beforeImages || []);
@@ -54,22 +62,19 @@ export default function JobExecutionPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [checklistTemplate, setChecklistTemplate] = useState<CaptainExecutionChecklistTemplateItem[]>([]);
+  const [isExecutionLoading, setIsExecutionLoading] = useState(true);
+  const [executionLoadError, setExecutionLoadError] = useState<string | null>(null);
+  const hasPrefilledExecution = useRef<string | null>(null);
 
-  const checklistSteps = useMemo(
-    () => {
-      if (checklistTemplate.length > 0) {
-        return checklistTemplate.map((item) => ({
-          id: item.id,
-          title: item.label,
-          instruction: item.description || '',
-          required: item.required,
-        }));
-      }
-
-      return serviceConfig?.steps || [];
-    },
-    [checklistTemplate, serviceConfig]
-  );
+  const checklistSteps = useMemo((): ChecklistStep[] => {
+    console.log('Checklist template from backend:', checklistTemplate);
+    return checklistTemplate.map((item) => ({
+      id: item.id,
+      title: item.label,
+      instruction: item.description || '',
+      required: item.required,
+    }));
+  }, [checklistTemplate]);
 
   const requiredSteps = useMemo(() => 
     checklistSteps.filter(s => s.required).map(s => s.id),
@@ -78,22 +83,47 @@ export default function JobExecutionPage() {
 
   useEffect(() => {
     let isMounted = true;
+    const currentJobId = job?.id;
+
+    if (!currentJobId) {
+      setIsExecutionLoading(false);
+      return;
+    }
+
+    // Prefill only once per job ID to avoid overriding local in-progress checklist state.
+    if (hasPrefilledExecution.current === currentJobId) {
+      setIsExecutionLoading(false);
+      return;
+    }
+    hasPrefilledExecution.current = currentJobId;
 
     const prefillExecution = async () => {
-      if (!job) {
+      setIsExecutionLoading(true);
+      setExecutionLoadError(null);
+
+      const result = await getJobExecution(currentJobId);
+      if (!isMounted) {
         return;
       }
 
-      const result = await getJobExecution(job.id);
-      if (!isMounted || !result.success || !result.data) {
+      if (!result.success || !result.data) {
+        setExecutionLoadError(result.message || 'Execution details are unavailable from backend. You cannot proceed.');
+        setIsExecutionLoading(false);
         return;
       }
 
       const execution = result.data;
+      const backendChecklist = execution.checklist_template.length > 0
+        ? execution.checklist_template
+        : execution.checklist_data;
 
-      if (execution.checklist_template.length > 0) {
-        setChecklistTemplate(execution.checklist_template);
+      if (backendChecklist.length === 0) {
+        setExecutionLoadError('Checklist template is missing from backend for this booking. You cannot proceed.');
+        setIsExecutionLoading(false);
+        return;
       }
+
+      setChecklistTemplate(backendChecklist);
 
       const beforeFromBackend = execution.before_images
         .map((img) => img.url)
@@ -125,12 +155,14 @@ export default function JobExecutionPage() {
         setCustomerRating(execution.captain_rating_for_customer);
       }
 
-      if (execution.started_at && job.status === 'scheduled') {
-        updateJob(job.id, {
+      if (execution.started_at && job?.status === 'scheduled') {
+        updateJob(currentJobId, {
           status: 'ongoing',
           startedAt: execution.started_at,
         });
       }
+
+      setIsExecutionLoading(false);
     };
 
     prefillExecution();
@@ -138,9 +170,9 @@ export default function JobExecutionPage() {
     return () => {
       isMounted = false;
     };
-  }, [getJobExecution, job, updateJob]);
+  }, [getJobExecution, job?.id, updateJob]);
 
-  if (!job || !serviceConfig) {
+  if (!job) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <p className="text-muted-foreground">Job not found</p>
@@ -148,14 +180,37 @@ export default function JobExecutionPage() {
     );
   }
 
+  if (isExecutionLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center gap-2">
+        <Spinner size="md" />
+        <p className="text-muted-foreground">Loading execution data...</p>
+      </div>
+    );
+  }
+
+  if (executionLoadError) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <Card className="w-full max-w-md">
+          <CardContent className="p-6 space-y-4 text-center">
+            <h2 className="text-lg font-semibold text-foreground">Execution data unavailable</h2>
+            <p className="text-sm text-muted-foreground">{executionLoadError}</p>
+            <Button onClick={() => router.push('/jobs')}>Back to Jobs</Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   const canProceed = () => {
     switch (currentStep) {
       case 0: // Before images
-        return beforeImages.length >= serviceConfig.minBeforeImages;
+        return beforeImages.length >= MIN_REQUIRED_BEFORE_IMAGES;
       case 1: // Service steps
-        return requiredSteps.every(id => completedSteps.includes(id));
+        return checklistSteps.length > 0 && requiredSteps.every(id => completedSteps.includes(id));
       case 2: // After images
-        return afterImages.length >= serviceConfig.minAfterImages;
+        return afterImages.length >= MIN_REQUIRED_AFTER_IMAGES;
       case 3: // Complete
         return true;
       default:
@@ -359,8 +414,8 @@ export default function JobExecutionPage() {
               <ImageUploader
                 images={beforeImages}
                 onImagesChange={setBeforeImages}
-                minImages={serviceConfig.minBeforeImages}
-                maxImages={serviceConfig.maxBeforeImages}
+                minImages={MIN_REQUIRED_BEFORE_IMAGES}
+                maxImages={MAX_ALLOWED_IMAGES}
                 label="Before Photos"
               />
             </CardContent>
@@ -396,8 +451,8 @@ export default function JobExecutionPage() {
               <ImageUploader
                 images={afterImages}
                 onImagesChange={setAfterImages}
-                minImages={serviceConfig.minAfterImages}
-                maxImages={serviceConfig.maxAfterImages}
+                minImages={MIN_REQUIRED_AFTER_IMAGES}
+                maxImages={MAX_ALLOWED_IMAGES}
                 label="After Photos"
               />
             </CardContent>
