@@ -266,40 +266,45 @@ export default function JobExecutionPage() {
   const handleComplete = async () => {
     setIsSubmitting(true);
 
-    const checklist = checklistSteps.map((step) => ({
-      id: step.id,
-      label: step.title,
-      required: step.required,
-      completed: completedSteps.includes(step.id),
-    }));
+    try {
+      const checklist = checklistSteps.map((step) => ({
+        id: step.id,
+        label: step.title,
+        required: step.required,
+        completed: completedSteps.includes(step.id),
+      }));
 
-    const completionResult = await completeJobExecution(job.id, {
-      beforeImages,
-      afterImages,
-      checklist,
-      captainRatingForCustomer: customerRating,
-      captainNotes: notes || undefined,
-      summary: {
-        service_name: job.serviceName,
-        customer_name: job.customerName,
-        before_images_count: beforeImages.length,
-        after_images_count: afterImages.length,
-        checklist_completed_count: checklist.filter((item) => item.completed).length,
-        checklist_total_count: checklist.length,
-      },
-      metadata: {
-        source: 'captain-web',
-      },
-    });
+      const completionResult = await completeJobExecution(job.id, {
+        beforeImages,
+        afterImages,
+        checklist,
+        captainRatingForCustomer: customerRating,
+        captainNotes: notes || undefined,
+        summary: {
+          service_name: job.serviceName,
+          customer_name: job.customerName,
+          before_images_count: beforeImages.length,
+          after_images_count: afterImages.length,
+          checklist_completed_count: checklist.filter((item) => item.completed).length,
+          checklist_total_count: checklist.length,
+        },
+        metadata: {
+          source: 'captain-web',
+        },
+      });
 
-    if (!completionResult.success) {
-      toast.error(completionResult.message || 'Unable to complete job right now');
+      if (!completionResult.success) {
+        toast.error(completionResult.message || 'Unable to complete job right now');
+        return;
+      }
+
+      setShowSuccess(true);
+    } catch (error) {
+      console.error('Job completion failed', error);
+      toast.error('Something went wrong. Please try again.');
+    } finally {
       setIsSubmitting(false);
-      return;
     }
-
-    setIsSubmitting(false);
-    setShowSuccess(true);
   };
 
   const openNavigation = () => {
@@ -417,6 +422,12 @@ export default function JobExecutionPage() {
                 minImages={MIN_REQUIRED_BEFORE_IMAGES}
                 maxImages={MAX_ALLOWED_IMAGES}
                 label="Before Photos"
+                compress={{
+                  maxWidth: 1280,
+                  maxHeight: 1280,
+                  quality: 0.72,
+                  mimeType: 'image/jpeg',
+                }}
               />
             </CardContent>
           </Card>
@@ -454,6 +465,12 @@ export default function JobExecutionPage() {
                 minImages={MIN_REQUIRED_AFTER_IMAGES}
                 maxImages={MAX_ALLOWED_IMAGES}
                 label="After Photos"
+                compress={{
+                  maxWidth: 1280,
+                  maxHeight: 1280,
+                  quality: 0.72,
+                  mimeType: 'image/jpeg',
+                }}
               />
             </CardContent>
           </Card>
