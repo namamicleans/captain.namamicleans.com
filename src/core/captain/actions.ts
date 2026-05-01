@@ -98,6 +98,10 @@ type BookingApi = {
   status: string;
   total_amount: string | number | null;
   unit_price: string | number | null;
+  quantity?: string | number | null;
+  quantity_unit?: string | null;
+  quantity_display?: string | null;
+  is_quantity_based?: boolean;
   address_line_1: string;
   address_line_2: string | null;
   city: string | null;
@@ -358,6 +362,19 @@ function inferServiceType(
   return SERVICE_TYPE_MATCHERS[0]?.key || "car_wash";
 }
 
+function buildQuantityDisplay(api: BookingApi): string {
+  const quantityDisplay = api.quantity_display?.toString().trim();
+  if (quantityDisplay) {
+    return quantityDisplay;
+  }
+  const quantity = parseAmount(api.quantity);
+  if (!Number.isFinite(quantity) || quantity <= 0) {
+    return '';
+  }
+  const quantityUnit = api.quantity_unit?.toString().trim();
+  return quantityUnit ? `${quantity} ${quantityUnit}` : `${quantity}`;
+}
+
 function buildScheduleTimestamp(
   date?: string | null,
   time?: string | null
@@ -399,6 +416,10 @@ function transformBookingToJob(api: BookingApi): Job {
     afterImages: [],
     completedSteps: [],
     notes: api.notes || api.additional_info || undefined,
+    quantityDisplay: buildQuantityDisplay(api),
+    quantity: parseAmount(api.quantity),
+    quantityUnit: api.quantity_unit?.toString().trim() || undefined,
+    isQuantityBased: Boolean(api.is_quantity_based),
   };
 }
 
