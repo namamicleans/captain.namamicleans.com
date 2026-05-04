@@ -141,6 +141,9 @@ export interface CaptainJobExecutionChecklistItem {
 export interface CaptainJobExecutionCompleteRequest {
   beforeImages: string[];
   afterImages: string[];
+  /** IDs of BookingGallery rows already on the server to keep (not re-upload). */
+  existingBeforeImageIds?: number[];
+  existingAfterImageIds?: number[];
   checklist: CaptainJobExecutionChecklistItem[];
   captainRatingForCustomer: number;
   captainNotes?: string;
@@ -148,15 +151,22 @@ export interface CaptainJobExecutionCompleteRequest {
   metadata?: Record<string, unknown>;
 }
 
+export interface CaptainJobExecutionSaveProgressRequest {
+  beforeImages?: string[];
+  afterImages?: string[];
+  existingBeforeImageIds?: number[];
+  existingAfterImageIds?: number[];
+  checklist?: CaptainJobExecutionChecklistItem[];
+  captainNotes?: string;
+  captainRatingForCustomer?: number;
+  currentStep?: number;
+}
+
 export interface Job {
   id: string;
   serviceType: string;
   serviceName: string;
   serviceIcon: string;
-  quantityDisplay: string;
-  quantity: number;
-  quantityUnit?: string;
-  isQuantityBased: boolean;
   customerName: string;
   customerPhone: string;
   address: string;
@@ -173,6 +183,10 @@ export interface Job {
   startedAt?: string;
   completedAt?: string;
   notes?: string;
+  quantityDisplay?: string;
+  quantity?: number;
+  quantityUnit?: string;
+  isQuantityBased?: boolean;
 }
 
 export interface Earnings {

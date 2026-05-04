@@ -24,6 +24,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { useExecutionDraft, clearExecutionDraft } from '@/hooks/useExecutionDraft';
 
 const executionSteps = ['Before', 'Service', 'After', 'Complete'];
 const MIN_REQUIRED_BEFORE_IMAGES = 2;
@@ -37,6 +38,17 @@ type ChecklistStep = {
   required: boolean;
 };
 
+function inferStepFromBackend(params: {
+  hasBeforeImages: boolean;
+  hasAnyChecklistProgress: boolean;
+  hasAfterImages: boolean;
+}): number {
+  if (params.hasAfterImages) return 3;
+  if (params.hasAnyChecklistProgress) return 2;
+  if (params.hasBeforeImages) return 1;
+  return 0;
+}
+
 export default function JobExecutionPage() {
   const params = useParams();
   const jobId = params.jobId as string;
@@ -46,28 +58,48 @@ export default function JobExecutionPage() {
     updateJob,
     startJobExecution,
     completeJobExecution,
+    saveJobExecutionProgress,
     getJobExecution,
   } = useCaptain();
 
   const job = jobs.find(j => j.id === jobId);
 
+  // ── Core step & checklist state ──────────────────────────────────────────
   const [currentStep, setCurrentStep] = useState(0);
-  const [beforeImages, setBeforeImages] = useState<string[]>(job?.beforeImages || []);
   const [completedSteps, setCompletedSteps] = useState<string[]>(job?.completedSteps || []);
-  const [afterImages, setAfterImages] = useState<string[]>(job?.afterImages || []);
   const [notes, setNotes] = useState('');
   const [customerRating, setCustomerRating] = useState(0);
+
+  // ── Image state ───────────────────────────────────────────────────────────
+  // "Existing" = already uploaded to S3, identified by gallery row ID.
+  // We send these IDs to the backend so it knows to keep them.
+  // "New" = base64 strings captured this session, sent as files.
+  const [existingBeforeIds, setExistingBeforeIds] = useState<number[]>([]);
+  const [existingAfterIds, setExistingAfterIds] = useState<number[]>([]);
+  const [beforeImages, setBeforeImages] = useState<string[]>(job?.beforeImages || []);
+  const [afterImages, setAfterImages] = useState<string[]>(job?.afterImages || []);
+
+  // ── UI state ──────────────────────────────────────────────────────────────
   const [showExitDialog, setShowExitDialog] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSavingProgress, setIsSavingProgress] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [checklistTemplate, setChecklistTemplate] = useState<CaptainExecutionChecklistTemplateItem[]>([]);
   const [isExecutionLoading, setIsExecutionLoading] = useState(true);
   const [executionLoadError, setExecutionLoadError] = useState<string | null>(null);
   const hasPrefilledExecution = useRef<string | null>(null);
 
+  // ── Draft persistence ─────────────────────────────────────────────────────
+  const savedDraft = useExecutionDraft({
+    bookingId: jobId,
+    currentStep,
+    completedSteps,
+    notes,
+    customerRating,
+  });
+
   const checklistSteps = useMemo((): ChecklistStep[] => {
-    console.log('Checklist template from backend:', checklistTemplate);
     return checklistTemplate.map((item) => ({
       id: item.id,
       title: item.label,
@@ -76,11 +108,12 @@ export default function JobExecutionPage() {
     }));
   }, [checklistTemplate]);
 
-  const requiredSteps = useMemo(() => 
+  const requiredSteps = useMemo(() =>
     checklistSteps.filter(s => s.required).map(s => s.id),
     [checklistSteps]
   );
 
+  // ── Load execution data from backend & restore progress ──────────────────
   useEffect(() => {
     let isMounted = true;
     const currentJobId = job?.id;
@@ -90,7 +123,6 @@ export default function JobExecutionPage() {
       return;
     }
 
-    // Prefill only once per job ID to avoid overriding local in-progress checklist state.
     if (hasPrefilledExecution.current === currentJobId) {
       setIsExecutionLoading(false);
       return;
@@ -102,75 +134,101 @@ export default function JobExecutionPage() {
       setExecutionLoadError(null);
 
       const result = await getJobExecution(currentJobId);
-      if (!isMounted) {
-        return;
-      }
+      if (!isMounted) return;
 
       if (!result.success || !result.data) {
-        setExecutionLoadError(result.message || 'Execution details are unavailable from backend. You cannot proceed.');
+        setExecutionLoadError(result.message || 'Execution details are unavailable. You cannot proceed.');
         setIsExecutionLoading(false);
         return;
       }
 
       const execution = result.data;
-      const backendChecklist = execution.checklist_template.length > 0
-        ? execution.checklist_template
-        : execution.checklist_data;
+      const backendChecklist =
+        execution.checklist_template.length > 0
+          ? execution.checklist_template
+          : execution.checklist_data;
 
       if (backendChecklist.length === 0) {
-        setExecutionLoadError('Checklist template is missing from backend for this booking. You cannot proceed.');
+        setExecutionLoadError('Checklist template is missing for this booking. You cannot proceed.');
         setIsExecutionLoading(false);
         return;
       }
 
       setChecklistTemplate(backendChecklist);
 
+      // ── Restore images from backend ───────────────────────────────────────
       const beforeFromBackend = execution.before_images
-        .map((img) => img.url)
+        .map(img => img.url)
         .filter((url): url is string => Boolean(url));
       const afterFromBackend = execution.after_images
-        .map((img) => img.url)
+        .map(img => img.url)
         .filter((url): url is string => Boolean(url));
 
-      if (beforeFromBackend.length > 0 || execution.before_image_urls.length > 0) {
-        setBeforeImages(beforeFromBackend.length > 0 ? beforeFromBackend : execution.before_image_urls);
+      if (beforeFromBackend.length > 0) {
+        setBeforeImages(beforeFromBackend);
+        setExistingBeforeIds(execution.before_images.map(img => img.id));
+      } else if (execution.before_image_urls.length > 0) {
+        setBeforeImages(execution.before_image_urls);
       }
 
-      if (afterFromBackend.length > 0 || execution.after_image_urls.length > 0) {
-        setAfterImages(afterFromBackend.length > 0 ? afterFromBackend : execution.after_image_urls);
+      if (afterFromBackend.length > 0) {
+        setAfterImages(afterFromBackend);
+        setExistingAfterIds(execution.after_images.map(img => img.id));
+      } else if (execution.after_image_urls.length > 0) {
+        setAfterImages(execution.after_image_urls);
       }
 
-      if (execution.checklist_data.length > 0) {
+      // ── Restore checklist progress ────────────────────────────────────────
+      // Draft takes priority over backend for checklist (captain may have
+      // ticked more items since the last full save).
+      if (savedDraft && savedDraft.completedSteps.length > 0) {
+        setCompletedSteps(savedDraft.completedSteps);
+      } else if (execution.checklist_data.length > 0) {
         const completed = execution.checklist_data
-          .filter((item) => item.completed)
-          .map((item) => item.id);
+          .filter(item => item.completed)
+          .map(item => item.id);
         setCompletedSteps(completed);
       }
 
-      if (execution.captain_notes) {
+      // ── Restore notes & rating ────────────────────────────────────────────
+      if (savedDraft?.notes) {
+        setNotes(savedDraft.notes);
+      } else if (execution.captain_notes) {
         setNotes(execution.captain_notes);
       }
 
-      if (execution.captain_rating_for_customer) {
+      if (savedDraft?.customerRating) {
+        setCustomerRating(savedDraft.customerRating);
+      } else if (execution.captain_rating_for_customer) {
         setCustomerRating(execution.captain_rating_for_customer);
       }
 
+      // ── Restore step ──────────────────────────────────────────────────────
+      // Priority: draft > backend metadata saved step > inferred from images/checklist.
+      const backendStep = inferStepFromBackend({
+        hasBeforeImages: beforeFromBackend.length > 0 || execution.before_image_urls.length > 0,
+        hasAnyChecklistProgress: execution.checklist_data.some(item => item.completed),
+        hasAfterImages: afterFromBackend.length > 0 || execution.after_image_urls.length > 0,
+      });
+      const metadataStep = (execution.metadata as Record<string, unknown> | null)
+        ?.progress as Record<string, unknown> | undefined;
+      const savedMetaStep = typeof metadataStep?.current_step === 'number'
+        ? metadataStep.current_step as number
+        : 0;
+      const resumeStep = Math.max(backendStep, savedMetaStep, savedDraft?.currentStep ?? 0);
+      setCurrentStep(resumeStep);
+
       if (execution.started_at && job?.status === 'scheduled') {
-        updateJob(currentJobId, {
-          status: 'ongoing',
-          startedAt: execution.started_at,
-        });
+        updateJob(currentJobId, { status: 'ongoing', startedAt: execution.started_at });
       }
 
       setIsExecutionLoading(false);
     };
 
     prefillExecution();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [getJobExecution, job?.id, updateJob]);
+    return () => { isMounted = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [job?.id]);
 
   if (!job) {
     return (
@@ -205,29 +263,31 @@ export default function JobExecutionPage() {
 
   const canProceed = () => {
     switch (currentStep) {
-      case 0: // Before images
-        return beforeImages.length >= MIN_REQUIRED_BEFORE_IMAGES;
-      case 1: // Service steps
-        return checklistSteps.length > 0 && requiredSteps.every(id => completedSteps.includes(id));
-      case 2: // After images
-        return afterImages.length >= MIN_REQUIRED_AFTER_IMAGES;
-      case 3: // Complete
-        return true;
-      default:
-        return false;
+      case 0: return beforeImages.length >= MIN_REQUIRED_BEFORE_IMAGES;
+      case 1: return checklistSteps.length > 0 && requiredSteps.every(id => completedSteps.includes(id));
+      case 2: return afterImages.length >= MIN_REQUIRED_AFTER_IMAGES;
+      case 3: return true;
+      default: return false;
     }
   };
 
+  // Only send base64 (new) images to the backend — S3 URLs are already there.
+  const newBeforeImages = beforeImages.filter(img => img.startsWith('data:'));
+  const newAfterImages = afterImages.filter(img => img.startsWith('data:'));
+
+  const buildChecklistPayload = () =>
+    checklistSteps.map(step => ({
+      id: step.id,
+      completed: completedSteps.includes(step.id),
+    }));
+
   const handleNext = async () => {
-    if (!job) {
-      return;
-    }
+    if (!job) return;
 
     if (currentStep === 0 && job.status === 'scheduled') {
       setIsStarting(true);
       const startResult = await startJobExecution(job.id, { source: 'captain-web' });
       setIsStarting(false);
-
       if (!startResult.success) {
         toast.error(startResult.message || 'Unable to start job right now');
         return;
@@ -235,7 +295,7 @@ export default function JobExecutionPage() {
     }
 
     if (currentStep < executionSteps.length - 1) {
-      // Save progress
+      const nextStep = currentStep + 1;
       updateJob(job.id, {
         status: 'ongoing',
         beforeImages,
@@ -243,7 +303,31 @@ export default function JobExecutionPage() {
         afterImages,
         startedAt: job.startedAt || new Date().toISOString(),
       });
-      setCurrentStep(currentStep + 1);
+      setCurrentStep(nextStep);
+
+      // Fire save-progress in background — non-blocking, localStorage draft is the fallback.
+      if (currentStep === 0) {
+        saveJobExecutionProgress(job.id, {
+          beforeImages: newBeforeImages,
+          existingBeforeImageIds: existingBeforeIds,
+          currentStep: nextStep,
+        }).catch(() => {});
+      } else if (currentStep === 1) {
+        saveJobExecutionProgress(job.id, {
+          checklist: buildChecklistPayload(),
+          captainNotes: notes || undefined,
+          currentStep: nextStep,
+        }).catch(() => {});
+      } else if (currentStep === 2) {
+        saveJobExecutionProgress(job.id, {
+          afterImages: newAfterImages,
+          existingAfterImageIds: existingAfterIds,
+          checklist: buildChecklistPayload(),
+          captainNotes: notes || undefined,
+          captainRatingForCustomer: customerRating || undefined,
+          currentStep: nextStep,
+        }).catch(() => {});
+      }
     } else {
       handleComplete();
     }
@@ -263,11 +347,28 @@ export default function JobExecutionPage() {
     );
   };
 
+  const handleBeforeImagesChange = (images: string[]) => {
+    setBeforeImages(images);
+    const remainingExistingIds = existingBeforeIds.filter((_, idx) => {
+      const url = beforeImages[idx];
+      return url && images.includes(url);
+    });
+    setExistingBeforeIds(remainingExistingIds);
+  };
+
+  const handleAfterImagesChange = (images: string[]) => {
+    setAfterImages(images);
+    const remainingExistingIds = existingAfterIds.filter((_, idx) => {
+      const url = afterImages[idx];
+      return url && images.includes(url);
+    });
+    setExistingAfterIds(remainingExistingIds);
+  };
+
   const handleComplete = async () => {
     setIsSubmitting(true);
-
     try {
-      const checklist = checklistSteps.map((step) => ({
+      const checklist = checklistSteps.map(step => ({
         id: step.id,
         label: step.title,
         required: step.required,
@@ -275,8 +376,10 @@ export default function JobExecutionPage() {
       }));
 
       const completionResult = await completeJobExecution(job.id, {
-        beforeImages,
-        afterImages,
+        beforeImages: newBeforeImages,
+        afterImages: newAfterImages,
+        existingBeforeImageIds: existingBeforeIds,
+        existingAfterImageIds: existingAfterIds,
         checklist,
         captainRatingForCustomer: customerRating,
         captainNotes: notes || undefined,
@@ -285,12 +388,10 @@ export default function JobExecutionPage() {
           customer_name: job.customerName,
           before_images_count: beforeImages.length,
           after_images_count: afterImages.length,
-          checklist_completed_count: checklist.filter((item) => item.completed).length,
+          checklist_completed_count: checklist.filter(item => item.completed).length,
           checklist_total_count: checklist.length,
         },
-        metadata: {
-          source: 'captain-web',
-        },
+        metadata: { source: 'captain-web' },
       });
 
       if (!completionResult.success) {
@@ -298,6 +399,7 @@ export default function JobExecutionPage() {
         return;
       }
 
+      clearExecutionDraft(job.id);
       setShowSuccess(true);
     } catch (error) {
       console.error('Job completion failed', error);
@@ -305,6 +407,28 @@ export default function JobExecutionPage() {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleExitAndSave = async () => {
+    updateJob(job.id, { status: 'ongoing', beforeImages, completedSteps, afterImages });
+
+    // Only persist to backend if the booking has been started (is ongoing).
+    if (job.status === 'ongoing') {
+      setIsSavingProgress(true);
+      await saveJobExecutionProgress(job.id, {
+        beforeImages: newBeforeImages,
+        afterImages: newAfterImages,
+        existingBeforeImageIds: existingBeforeIds,
+        existingAfterImageIds: existingAfterIds,
+        checklist: checklistSteps.length > 0 ? buildChecklistPayload() : undefined,
+        captainNotes: notes || undefined,
+        captainRatingForCustomer: customerRating || undefined,
+        currentStep,
+      }).catch(() => {}); // localStorage draft is the fallback if this fails
+      setIsSavingProgress(false);
+    }
+
+    router.push('/jobs');
   };
 
   const openNavigation = () => {
@@ -315,37 +439,18 @@ export default function JobExecutionPage() {
   };
 
   const getPrimaryButtonContent = () => {
-    if (isSubmitting) {
-      return (
-        <div className="flex items-center gap-2">
-          <Spinner size="sm" />
-          <span>Completing...</span>
-        </div>
-      );
-    }
-
-    if (isStarting) {
-      return (
-        <div className="flex items-center gap-2">
-          <Spinner size="sm" />
-          <span>Starting...</span>
-        </div>
-      );
-    }
-
-    if (currentStep === executionSteps.length - 1) {
-      return (
-        <span className="flex items-center gap-2">
-          <CheckCircle2 className="h-5 w-5" />
-          Complete Job
-        </span>
-      );
-    }
-
+    if (isSubmitting) return (
+      <div className="flex items-center gap-2"><Spinner size="sm" /><span>Completing...</span></div>
+    );
+    if (isStarting) return (
+      <div className="flex items-center gap-2"><Spinner size="sm" /><span>Starting...</span></div>
+    );
+    if (currentStep === executionSteps.length - 1) return (
+      <span className="flex items-center gap-2"><CheckCircle2 className="h-5 w-5" />Complete Job</span>
+    );
     return 'Continue';
   };
 
-  // Success Animation
   if (showSuccess) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
@@ -355,13 +460,9 @@ export default function JobExecutionPage() {
           </div>
           <div>
             <h1 className="text-2xl font-bold text-foreground mb-2">Job Completed!</h1>
-            <p className="text-muted-foreground">
-              Great work! Your job completion has been recorded successfully.
-            </p>
+            <p className="text-muted-foreground">Great work! Your job completion has been recorded successfully.</p>
           </div>
-          <Button size="lg" onClick={() => router.push('/jobs')}>
-            Back to Jobs
-          </Button>
+          <Button size="lg" onClick={() => router.push('/jobs')}>Back to Jobs</Button>
         </div>
       </div>
     );
@@ -383,57 +484,40 @@ export default function JobExecutionPage() {
             <Button size="icon" onClick={openNavigation}>
               <Navigation className="h-5 w-5" />
             </Button>
-            <Button 
-              
-              size="icon"
-              onClick={() => window.open(`tel:${job.customerPhone}`)}
-            >
+            <Button size="icon" onClick={() => window.open(`tel:${job.customerPhone}`)}>
               <Phone className="h-5 w-5" />
             </Button>
           </div>
         </div>
-        
-        
       </header>
 
       {/* Content */}
       <main className="p-4 max-w-lg mx-auto pb-24">
-        {/* Progress */}
         <div className="pl-10 pb-4 max-w-lg mx-auto">
           <StepProgress steps={executionSteps} currentStep={currentStep} />
         </div>
 
-        {/* Step 1: Before Images */}
+        {/* Step 0: Before Images */}
         {currentStep === 0 && (
           <Card>
             <CardContent className="p-6">
               <div className="text-center mb-6">
-                <h2 className="text-lg font-semibold text-foreground mb-2">
-                  Before Service Photos
-                </h2>
-                <p className="text-sm text-muted-foreground">
-                  Capture the condition before starting work
-                </p>
+                <h2 className="text-lg font-semibold text-foreground mb-2">Before Service Photos</h2>
+                <p className="text-sm text-muted-foreground">Capture the condition before starting work</p>
               </div>
-
               <ImageUploader
                 images={beforeImages}
-                onImagesChange={setBeforeImages}
+                onImagesChange={handleBeforeImagesChange}
                 minImages={MIN_REQUIRED_BEFORE_IMAGES}
                 maxImages={MAX_ALLOWED_IMAGES}
                 label="Before Photos"
-                compress={{
-                  maxWidth: 1280,
-                  maxHeight: 1280,
-                  quality: 0.72,
-                  mimeType: 'image/jpeg',
-                }}
+                compress={{ maxWidth: 1280, maxHeight: 1280, quality: 0.72, mimeType: 'image/jpeg' }}
               />
             </CardContent>
           </Card>
         )}
 
-        {/* Step 2: Service Checklist */}
+        {/* Step 1: Service Checklist */}
         {currentStep === 1 && (
           <Card>
             <CardContent className="p-6">
@@ -446,43 +530,32 @@ export default function JobExecutionPage() {
           </Card>
         )}
 
-        {/* Step 3: After Images */}
+        {/* Step 2: After Images */}
         {currentStep === 2 && (
           <Card>
             <CardContent className="p-6">
               <div className="text-center mb-6">
-                <h2 className="text-lg font-semibold text-foreground mb-2">
-                  After Service Photos
-                </h2>
-                <p className="text-sm text-muted-foreground">
-                  Capture the result of your work
-                </p>
+                <h2 className="text-lg font-semibold text-foreground mb-2">After Service Photos</h2>
+                <p className="text-sm text-muted-foreground">Capture the result of your work</p>
               </div>
-
               <ImageUploader
                 images={afterImages}
-                onImagesChange={setAfterImages}
+                onImagesChange={handleAfterImagesChange}
                 minImages={MIN_REQUIRED_AFTER_IMAGES}
                 maxImages={MAX_ALLOWED_IMAGES}
                 label="After Photos"
-                compress={{
-                  maxWidth: 1280,
-                  maxHeight: 1280,
-                  quality: 0.72,
-                  mimeType: 'image/jpeg',
-                }}
+                compress={{ maxWidth: 1280, maxHeight: 1280, quality: 0.72, mimeType: 'image/jpeg' }}
               />
             </CardContent>
           </Card>
         )}
 
-        {/* Step 4: Complete */}
+        {/* Step 3: Summary & Complete */}
         {currentStep === 3 && (
           <div className="space-y-4">
             <Card>
               <CardContent className="p-6">
                 <h2 className="font-semibold text-foreground mb-4">Job Summary</h2>
-                
                 <div className="space-y-3">
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Service</span>
@@ -518,9 +591,7 @@ export default function JobExecutionPage() {
               <CardContent className="p-6 space-y-4">
                 <div className="text-center">
                   <h3 className="font-semibold text-foreground mb-2">Rate Customer</h3>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    How was your experience with this customer?
-                  </p>
+                  <p className="text-sm text-muted-foreground mb-4">How was your experience?</p>
                 </div>
                 <CustomerRating value={customerRating} onChange={setCustomerRating} />
               </CardContent>
@@ -532,7 +603,7 @@ export default function JobExecutionPage() {
                 <Textarea
                   placeholder="Any notes about the job..."
                   value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
+                  onChange={e => setNotes(e.target.value)}
                   rows={3}
                 />
               </CardContent>
@@ -560,21 +631,19 @@ export default function JobExecutionPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Exit Job?</AlertDialogTitle>
             <AlertDialogDescription>
-              Your progress will be saved. You can continue this job later.
+              Your progress will be saved. You can continue this job later from where you left off.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => {
-              updateJob(job.id, {
-                status: 'ongoing',
-                beforeImages,
-                completedSteps,
-                afterImages,
-              });
-              router.push('/jobs');
-            }}>
-              Save & Exit
+            <AlertDialogCancel disabled={isSavingProgress}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isSavingProgress}
+              onClick={handleExitAndSave}
+            >
+              {isSavingProgress
+                ? <div className="flex items-center gap-2"><Spinner size="sm" /><span>Saving...</span></div>
+                : 'Save & Exit'
+              }
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

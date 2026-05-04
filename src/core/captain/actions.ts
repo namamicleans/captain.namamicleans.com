@@ -1,6 +1,6 @@
 "use server";
 
-import { apiGet, apiPost, fetchWithSession } from "@core/http";
+import { apiGet, apiPatch, apiPost, fetchWithSession } from "@core/http";
 import { createErrorResponse } from "@shared/response";
 import type {
   CaptainCheckInRequest,
@@ -8,6 +8,7 @@ import type {
   CaptainExecutionChecklistTemplateItem,
   CaptainJobExecution,
   CaptainJobExecutionCompleteRequest,
+  CaptainJobExecutionSaveProgressRequest,
   CaptainJobExecutionStartRequest,
   CaptainJobFilters,
   CaptainLeaveBalance,
@@ -795,6 +796,16 @@ export async function completeCaptainJobExecution(
   const formData = new FormData();
   appendBase64Images(formData, 'before_images', payload.beforeImages);
   appendBase64Images(formData, 'after_images', payload.afterImages);
+
+  // Tell the backend which already-uploaded gallery rows to keep so they are
+  // not deleted and re-uploaded unnecessarily on resume.
+  if (payload.existingBeforeImageIds && payload.existingBeforeImageIds.length > 0) {
+    formData.append('existing_before_image_ids', JSON.stringify(payload.existingBeforeImageIds));
+  }
+  if (payload.existingAfterImageIds && payload.existingAfterImageIds.length > 0) {
+    formData.append('existing_after_image_ids', JSON.stringify(payload.existingAfterImageIds));
+  }
+
   formData.append('checklist', JSON.stringify(payload.checklist));
   formData.append(
     'captain_rating_for_customer',
@@ -841,6 +852,59 @@ export async function getCaptainJobExecution(
   const result = await fetchWithSession<undefined, JobExecutionApi>(
     apiGet,
     `/api/service/captain/bookings/${bookingId}/execution/`
+  );
+
+  if (!result.success || !result.data) {
+    return {
+      success: result.success,
+      message: result.message,
+      code: result.code,
+      data: null,
+      error: result.error,
+    } as ServerActionResponse<CaptainJobExecution>;
+  }
+
+  return {
+    ...result,
+    data: transformJobExecution(result.data),
+  } as ServerActionResponse<CaptainJobExecution>;
+}
+
+export async function saveJobExecutionProgress(
+  bookingId: string,
+  payload: CaptainJobExecutionSaveProgressRequest
+): Promise<ServerActionResponse<CaptainJobExecution>> {
+  const formData = new FormData();
+
+  if (payload.beforeImages && payload.beforeImages.length > 0) {
+    appendBase64Images(formData, 'before_images', payload.beforeImages);
+  }
+  if (payload.afterImages && payload.afterImages.length > 0) {
+    appendBase64Images(formData, 'after_images', payload.afterImages);
+  }
+  if (payload.existingBeforeImageIds && payload.existingBeforeImageIds.length > 0) {
+    formData.append('existing_before_image_ids', JSON.stringify(payload.existingBeforeImageIds));
+  }
+  if (payload.existingAfterImageIds && payload.existingAfterImageIds.length > 0) {
+    formData.append('existing_after_image_ids', JSON.stringify(payload.existingAfterImageIds));
+  }
+  if (payload.checklist) {
+    formData.append('checklist', JSON.stringify(payload.checklist));
+  }
+  if (payload.captainNotes !== undefined) {
+    formData.append('captain_notes', payload.captainNotes);
+  }
+  if (payload.captainRatingForCustomer !== undefined) {
+    formData.append('captain_rating_for_customer', String(payload.captainRatingForCustomer));
+  }
+  if (payload.currentStep !== undefined) {
+    formData.append('current_step', String(payload.currentStep));
+  }
+
+  const result = await fetchWithSession<FormData, JobExecutionApi>(
+    apiPatch,
+    `/api/service/captain/bookings/${bookingId}/execution/`,
+    formData
   );
 
   if (!result.success || !result.data) {
