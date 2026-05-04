@@ -16,6 +16,7 @@ import type {
   CaptainCheckInRequest,
   CaptainCheckOutRequest,
   CaptainJobExecution,
+  CaptainJobExecutionSaveProgressRequest,
   CaptainJobExecutionCompleteRequest,
   CaptainJobExecutionStartRequest,
   CaptainJobFilters,
@@ -56,6 +57,10 @@ export interface CaptainActions {
   ) => Promise<ServerActionResponse<CaptainJobExecution>>;
   getJobExecution: (
     jobId: string
+  ) => Promise<ServerActionResponse<CaptainJobExecution>>;
+  saveJobExecutionProgress: (
+    jobId: string,
+    payload: CaptainJobExecutionSaveProgressRequest
   ) => Promise<ServerActionResponse<CaptainJobExecution>>;
   fetchLeaveBalance: () => Promise<ServerActionResponse<CaptainLeaveBalance>>;
   fetchLeaves: () => Promise<ServerActionResponse<CaptainLeaveRequest[]>>;
@@ -107,6 +112,10 @@ interface CaptainContextType {
   ) => Promise<ServerActionResponse<CaptainJobExecution>>;
   getJobExecution: (
     jobId: string
+  ) => Promise<ServerActionResponse<CaptainJobExecution>>;
+  saveJobExecutionProgress: (
+    jobId: string,
+    payload: CaptainJobExecutionSaveProgressRequest
   ) => Promise<ServerActionResponse<CaptainJobExecution>>;
   fetchLeaveBalance: () => Promise<ServerActionResponse<CaptainLeaveBalance>>;
   fetchLeaves: () => Promise<ServerActionResponse<CaptainLeaveRequest[]>>;
@@ -306,6 +315,12 @@ export function CaptainProvider({
     [actions]
   );
 
+  const saveJobExecutionProgress = useCallback(
+    async (jobId: string, payload: CaptainJobExecutionSaveProgressRequest) =>
+      actions.saveJobExecutionProgress(jobId, payload),
+    [actions]
+  );
+
   const completeJob = useCallback((
     jobId: string,
     afterImages: string[],
@@ -379,6 +394,7 @@ export function CaptainProvider({
       startJobExecution,
       completeJobExecution,
       getJobExecution,
+      saveJobExecutionProgress,
       fetchLeaveBalance,
       fetchLeaves,
       createLeaveDraft,
@@ -406,6 +422,7 @@ export function CaptainProvider({
       startJobExecution,
       completeJobExecution,
       getJobExecution,
+      saveJobExecutionProgress,
       fetchLeaveBalance,
       fetchLeaves,
       createLeaveDraft,

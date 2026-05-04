@@ -3,6 +3,7 @@ export {
   getCaptainShiftSummary,
   getCaptainJobs,
   getCaptainJobExecution,
+  saveJobExecutionProgress,
   startCaptainJobExecution,
   completeCaptainJobExecution,
   getCaptainLeaveBalance,

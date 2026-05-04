@@ -114,6 +114,23 @@ export const apiPut = async <RequestBody, ResponseType>(
   });
 };
 
+export const apiPatch = async <RequestBody, ResponseType>(
+  endpoint: string,
+  body?: RequestBody,
+  options: RequestInit = {},
+): Promise<StandardApiResponse<ResponseType> | ResponseType> => {
+  const isFormData = body instanceof FormData;
+  return apiRequest<ResponseType>(endpoint, {
+    method: "PATCH",
+    body: isFormData ? body : JSON.stringify(body),
+    ...options,
+    headers: {
+      ...options.headers,
+      ...(isFormData ? {} : { "Content-Type": "application/json" }),
+    },
+  });
+};
+
 export const apiDelete = async <ResponseType>(
   endpoint: string,
   options: RequestInit = {},
