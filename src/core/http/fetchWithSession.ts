@@ -1,18 +1,12 @@
-import { cookies } from "next/headers";
-import { getSession, refreshAccessToken, invalidateSession } from "../auth/session";
+import { getSession, invalidateSession } from "../auth/session";
+import { refreshToken } from "../auth/sessionManager";
 import { shouldRefreshToken } from "../auth/tokenHelpers";
-import { ServerActionResponse, Session, StandardApiResponse } from "@/types/generic";
+import { ServerActionResponse, StandardApiResponse } from "@/types/generic";
+import { UserResponse } from "@/types/auth";
 import { catchError } from "@core/http/catchError";
 import { createErrorResponse } from "@shared/response";
 import { apiPost, apiPut } from "@core/http/client";
-
-type RefreshPayload = {
-  session: Session;
-  sessionValue: string;
-  expiresAt: string;
-};
-
-let refreshPromise: Promise<ServerActionResponse<RefreshPayload>> | null = null;
+import type { JwtPayload } from "@core/auth/crypto";
 
 type RequestFunction<Body, Response> =
   | ((endpoint: string, options?: RequestInit) => Promise<StandardApiResponse<Response> | Response>)
@@ -44,9 +38,30 @@ async function executeRequest<Body, Data>(
   return [error, data];
 }
 
-function formatResponse<Data>(data: StandardApiResponse<Data> | Data): ServerActionResponse<Data> {
-  // Backend always returns StandardApiResponse, just return it
-  return data as StandardApiResponse<Data>;
+function buildHeaders(accessToken: string, options: RequestInit): Record<string, string> {
+  return {
+    ...(options.headers as Record<string, string>),
+    Authorization: `Bearer ${accessToken}`,
+  };
+}
+
+async function runRefreshFlow(): Promise<{
+  session: JwtPayload | null;
+  result: ServerActionResponse<UserResponse>;
+}> {
+  // refreshToken() handles the API call, cookie update, and mutex
+  const result = await refreshToken();
+
+  if (!result.success) {
+    if (result.code === "SESSION_EXPIRED" || result.code === "NO_REFRESH_TOKEN") {
+      await invalidateSession();
+    }
+    return { session: null, result };
+  }
+
+  // Cookie was updated by refreshToken() — read the new session
+  const session = await getSession();
+  return { session, result };
 }
 
 export async function fetchWithSession<Body = undefined, Data = unknown>(
@@ -60,7 +75,7 @@ export async function fetchWithSession<Body = undefined, Data = unknown>(
   if (!session) {
     return createErrorResponse<Data>(
       "User not logged in. Please login to continue.",
-      "UNAUTHORIZED"
+      "UNAUTHORIZED",
     );
   }
 
@@ -70,24 +85,20 @@ export async function fetchWithSession<Body = undefined, Data = unknown>(
       return createErrorResponse<Data>(
         result.message || "Session expired. Please login again.",
         result.code || "SESSION_EXPIRED",
-        result.error ?? null
+        result.error ?? null,
       );
     }
     session = refreshedSession;
   }
 
-  const headers: Record<string, string> = {
-    ...(options.headers as Record<string, string>),
-    Authorization: `Bearer ${session.tokens.access}`,
-  };
-
+  const headers = buildHeaders(session.tokens.access, options);
   const [error, data] = await executeRequest(requestFunction, endpoint, body, options, headers);
 
   if (error) {
     return await handleRequestError(error, requestFunction, endpoint, body, options);
   }
 
-  return formatResponse(data!);
+  return data as ServerActionResponse<Data>;
 }
 
 async function handleRequestError<Body, Data>(
@@ -101,7 +112,7 @@ async function handleRequestError<Body, Data>(
     return createErrorResponse<Data>(
       error.message,
       error.code ?? "UNKNOWN_ERROR",
-      error.error ?? null
+      error.error ?? null,
     );
   }
 
@@ -111,62 +122,23 @@ async function handleRequestError<Body, Data>(
     return createErrorResponse<Data>(
       result.message || "Session expired. Please login again.",
       result.code || "SESSION_EXPIRED",
-      result.error ?? null
+      result.error ?? null,
     );
   }
 
-  const retryHeaders: Record<string, string> = {
-    ...(options.headers as Record<string, string>),
-    Authorization: `Bearer ${refreshedSession.tokens.access}`,
-  };
-
-  const [retryError, retryData] = await executeRequest(requestFunction, endpoint, body, options, retryHeaders);
+  const retryHeaders = buildHeaders(refreshedSession.tokens.access, options);
+  const [retryError, retryData] = await executeRequest(
+    requestFunction, endpoint, body, options, retryHeaders,
+  );
 
   if (retryError) {
-    const typedError = retryError as Error & { code?: string; error?: unknown };
+    const typed = retryError as Error & { code?: string; error?: unknown };
     return createErrorResponse<Data>(
-      typedError.message,
-      typedError.code ?? "UNKNOWN_ERROR",
-      typedError.error ?? null
+      typed.message,
+      typed.code ?? "UNKNOWN_ERROR",
+      typed.error ?? null,
     );
   }
 
-  return formatResponse(retryData!);
-}
-
-async function runRefreshFlow(): Promise<{
-  session: Session | null;
-  result: ServerActionResponse<RefreshPayload>;
-}> {
-  if (!refreshPromise) {
-    refreshPromise = refreshAccessToken();
-  }
-
-  const result = await refreshPromise;
-  refreshPromise = null;
-
-  if (result.success && result.data) {
-    const cookieStore = await cookies();
-    cookieStore.set({
-      name: "session",
-      value: result.data.sessionValue,
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      expires: new Date(result.data.expiresAt),
-    });
-
-    return {
-      session: result.data.session,
-      result,
-    };
-  }
-
-  if (result.code === "SESSION_EXPIRED" || result.code === "NO_REFRESH_TOKEN") {
-    await invalidateSession();
-  }
-
-  return {
-    session: null,
-    result,
-  };
+  return retryData as ServerActionResponse<Data>;
 }

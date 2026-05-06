@@ -2,7 +2,6 @@ export {
 	login,
 	logout,
 	getSession,
-	refreshAccessToken,
 	refreshSessionIfNeeded,
 	invalidateSession,
 } from "./session";

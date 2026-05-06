@@ -4,19 +4,14 @@ import { cookies } from "next/headers";
 import { apiPost } from "@core/http/client";
 import { catchError } from "@core/http/catchError";
 import { shouldRefreshToken } from "@core/auth/tokenHelpers";
+import { refreshToken } from "@core/auth/sessionManager";
 import { createErrorResponse } from "@shared/response";
 import { UserResponse } from "@/types/auth";
-import { ServerActionResponse, Session, StandardApiResponse } from "@/types/generic";
+import { ServerActionResponse, StandardApiResponse } from "@/types/generic";
 import { decrypt, encrypt, JwtPayload } from "./crypto";
 
-const ACCESS_TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
-const SESSION_COOKIE_TTL_MS = 28 * 24 * 60 * 60 * 1000; // 4 weeks
-
-type RefreshPayload = {
-  session: Session;
-  sessionValue: string;
-  expiresAt: string;
-};
+const ACCESS_TOKEN_TTL_MS = 23 * 60 * 60 * 1000;
+const SESSION_COOKIE_TTL_MS = 28 * 24 * 60 * 60 * 1000;
 
 type Credentials = {
   email: string;
@@ -36,7 +31,6 @@ export async function login(formData: Credentials): Promise<ServerActionResponse
     );
   }
 
-  // All responses are StandardApiResponse
   const standardResponse = response as StandardApiResponse<UserResponse>;
   if (!standardResponse.success || !standardResponse.data) {
     return createErrorResponse<UserResponse>(
@@ -46,10 +40,7 @@ export async function login(formData: Credentials): Promise<ServerActionResponse
     );
   }
 
-  const data = standardResponse.data;
-
-  const { payload, sessionValue, expiresAt } = await createSessionArtifacts(data);
-
+  const { sessionValue, expiresAt, payload } = await createSessionArtifacts(standardResponse.data);
   await setSessionCookie(sessionValue, new Date(expiresAt));
 
   return {
@@ -67,71 +58,8 @@ export async function getSession(): Promise<JwtPayload | null> {
   return decrypt(session);
 }
 
-async function setSessionCookie(value: string, expires: Date) {
-  const cookieStore = await cookies();
-  cookieStore.set({
-    name: "session",
-    value,
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    expires,
-  });
-}
-
 export async function logout(): Promise<void> {
   await clearSessionCookie();
-}
-
-export async function refreshAccessToken(): Promise<ServerActionResponse<RefreshPayload>> {
-  const session = await getSession();
-
-  if (!session?.tokens.refresh) {
-    return createErrorResponse<RefreshPayload>(
-      "No refresh token available",
-      "NO_REFRESH_TOKEN",
-      null,
-    );
-  }
-
-  const [error, response] = await catchError(
-    apiPost<{ refresh: string }, UserResponse>("/api/auth/refresh/", {
-      refresh: session.tokens.refresh,
-    }),
-  );
-
-  if (error) {
-    return createErrorResponse<RefreshPayload>(
-      "Session expired. Please login again.",
-      "SESSION_EXPIRED",
-      error.error,
-    );
-  }
-
-  // All responses are StandardApiResponse
-  const standardResponse = response as StandardApiResponse<UserResponse>;
-  if (!standardResponse.success || !standardResponse.data) {
-    return createErrorResponse<RefreshPayload>(
-      standardResponse.message || "Token refresh failed",
-      standardResponse.code,
-      standardResponse.error,
-    );
-  }
-
-  const data = standardResponse.data;
-
-  const { sessionValue, expiresAt, session: sessionDetails } = await createSessionArtifacts(data);
-
-  return {
-    success: true,
-    message: "Session refreshed successfully",
-    code: "TOKEN_REFRESHED",
-    data: {
-      session: sessionDetails,
-      sessionValue,
-      expiresAt,
-    },
-    error: null,
-  };
 }
 
 export async function refreshSessionIfNeeded(): Promise<ServerActionResponse<{ refreshed: boolean }>> {
@@ -155,21 +83,17 @@ export async function refreshSessionIfNeeded(): Promise<ServerActionResponse<{ r
     };
   }
 
-  const refreshResult = await refreshAccessToken();
+  // refreshToken() handles the API call, cookie update, and mutex
+  const result = await refreshToken();
 
-  if (!refreshResult.success || !refreshResult.data) {
+  if (!result.success) {
     await clearSessionCookie();
     return createErrorResponse<{ refreshed: boolean }>(
-      refreshResult.message || "Session refresh failed",
-      refreshResult.code || "SESSION_REFRESH_FAILED",
-      refreshResult.error ?? null,
+      result.message || "Session refresh failed",
+      result.code || "SESSION_REFRESH_FAILED",
+      result.error ?? null,
     );
   }
-
-  await setSessionCookie(
-    refreshResult.data.sessionValue,
-    new Date(refreshResult.data.expiresAt),
-  );
 
   return {
     success: true,
@@ -192,32 +116,30 @@ export async function invalidateSession(): Promise<ServerActionResponse<null>> {
 }
 
 async function createSessionArtifacts(data: UserResponse) {
-  const normalizedUser = {
-    ...data.user,
-    role: data.user.role ? data.user.role.toLowerCase().trim() : data.user.role,
-  };
-
-  const normalizedPayload: UserResponse = {
+  const normalized: UserResponse = {
     ...data,
-    user: normalizedUser,
+    user: {
+      ...data.user,
+      role: data.user.role ? data.user.role.toLowerCase().trim() : data.user.role,
+    },
   };
 
   const tokenExpiry = Date.now() + ACCESS_TOKEN_TTL_MS;
-  const sessionValue = await encrypt(normalizedPayload, tokenExpiry);
+  const sessionValue = await encrypt(normalized, tokenExpiry);
   const expiresAt = new Date(Date.now() + SESSION_COOKIE_TTL_MS).toISOString();
 
-  const sessionDetails: Session = {
-    user: normalizedPayload.user,
-    tokens: normalizedPayload.tokens,
-    tokenExpiry,
-  };
+  return { payload: normalized, sessionValue, expiresAt };
+}
 
-  return {
-    payload: normalizedPayload,
-    sessionValue,
-    expiresAt,
-    session: sessionDetails,
-  };
+async function setSessionCookie(value: string, expires: Date) {
+  const cookieStore = await cookies();
+  cookieStore.set({
+    name: "session",
+    value,
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    expires,
+  });
 }
 
 async function clearSessionCookie() {
