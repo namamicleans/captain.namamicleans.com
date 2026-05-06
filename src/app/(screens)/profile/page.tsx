@@ -130,7 +130,7 @@ export default function ProfilePage() {
   return (
     <div className="min-h-screen bg-background pb-20">
       {/* Header */}
-      <header className="bg-gradient-to-br from-primary to-primary/80 pt-8 pb-16 px-4">
+      <header className="bg-gradient-to-br from-primary to-primary/80 pt-safe pb-16 px-4">
         <div className="max-w-lg mx-auto">
           {/* <h1 className="text-xl font-bold text-primary-foreground mb-6">{t('profile.title')}</h1> */}
           

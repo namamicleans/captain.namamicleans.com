@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { Providers } from "@/components/shared/providers";
+import { ThemeColorSync } from "@/components/shared/ThemeColorSync";
 import {
   getSession,
   invalidateSession,
@@ -91,6 +92,31 @@ export default async function RootLayout({
         <link rel="shortcut icon" href="/favicon.ico" />
       </head>
       <body>
+        {/*
+          Status-bar shelf — sits behind the transparent iOS black-translucent
+          status bar. Height = env(safe-area-inset-top) so it fills exactly the
+          notch/Dynamic-Island zone. ThemeColorSync changes its backgroundColor
+          on every route transition, giving white icons a coloured background to
+          sit on regardless of the page's own header colour.
+          On devices with no safe-area inset (non-notched / Android) this div
+          collapses to 0 height and is invisible.
+        */}
+        <div
+          id="status-bar-shelf"
+          aria-hidden="true"
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            height: "env(safe-area-inset-top, 0px)",
+            backgroundColor: "#047857",
+            transition: "background-color 300ms ease",
+            zIndex: 9999,
+            pointerEvents: "none",
+          }}
+        />
+        <ThemeColorSync />
         <Providers
           initialUser={session?.user || null}
           refreshSession={refreshSessionIfNeeded}
