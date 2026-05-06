@@ -8,6 +8,17 @@ const withPWA = require('next-pwa')({
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  async headers() {
+    return [
+      {
+        source: "/:path*.lottie",
+        headers: [
+          { key: "Content-Type", value: "application/zip" },
+          { key: "Cache-Control", value: "public, max-age=86400, immutable" },
+        ],
+      },
+    ];
+  },
   images: {
     remotePatterns: [
       {
