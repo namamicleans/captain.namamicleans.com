@@ -162,6 +162,19 @@ export interface CaptainJobExecutionSaveProgressRequest {
   currentStep?: number;
 }
 
+export interface JobSelectedVariant {
+  id: number | null;
+  name: string;
+  price: number;
+}
+
+export interface JobSelectedAddon {
+  id: number | null;
+  name: string;
+  price: number;
+  quantity: number;
+}
+
 export interface Job {
   id: string;
   serviceType: string;
@@ -176,7 +189,7 @@ export interface Job {
   status: 'scheduled' | 'ongoing' | 'completed' | 'cancelled';
   paymentStatus: 'pending' | 'paid' | 'cod';
   paymentAmount: number;
-  distance?: number; // km from current location
+  distance?: number;
   beforeImages: string[];
   afterImages: string[];
   completedSteps: string[];
@@ -187,6 +200,8 @@ export interface Job {
   quantity?: number;
   quantityUnit?: string;
   isQuantityBased?: boolean;
+  selectedVariants?: JobSelectedVariant[];
+  selectedAddons?: JobSelectedAddon[];
 }
 
 export interface Earnings {

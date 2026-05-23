@@ -84,10 +84,25 @@ type BookingPackagePlanApi = {
   service: string;
 };
 
+type SelectedVariantApi = {
+  id: number | null;
+  name: string;
+  price: number;
+};
+
+type SelectedAddonApi = {
+  id: number | null;
+  name: string;
+  price: number;
+  quantity: number;
+};
+
 type BookingUserPackageApi = {
   payment_status: string | null;
   payment_method?: string | null;
   package_plan: BookingPackagePlanApi;
+  selected_variants?: SelectedVariantApi[];
+  selected_addons?: SelectedAddonApi[];
 };
 
 type BookingApi = {
@@ -421,6 +436,8 @@ function transformBookingToJob(api: BookingApi): Job {
     quantity: parseAmount(api.quantity),
     quantityUnit: api.quantity_unit?.toString().trim() || undefined,
     isQuantityBased: Boolean(api.is_quantity_based),
+    selectedVariants: api.user_package?.selected_variants,
+    selectedAddons: api.user_package?.selected_addons,
   };
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { MapPin, Clock, Navigation, Play, CheckCircle2, Phone, Car, Sofa, Home, Sparkles, User, Package } from 'lucide-react';
+import { MapPin, Clock, Navigation, Play, CheckCircle2, Phone, Car, Sofa, Home, Sparkles, User, Package, Layers, PlusCircle } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -110,7 +110,31 @@ export function JobCard({ job, onNavigate, onStart }: JobCardProps) {
               {job.quantityDisplay}
             </Badge>
           </div>
-          
+
+          {/* Variants */}
+          {job.selectedVariants && job.selectedVariants.length > 0 && (
+            <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
+              <Layers className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              {job.selectedVariants.map((v, i) => (
+                <Badge key={v.id ?? i} variant="outline" className="text-xs bg-primary/5 text-primary border-primary/20">
+                  {v.name}
+                </Badge>
+              ))}
+            </div>
+          )}
+
+          {/* Add-ons */}
+          {job.selectedAddons && job.selectedAddons.length > 0 && (
+            <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
+              <PlusCircle className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              {job.selectedAddons.map((a, i) => (
+                <Badge key={a.id ?? i} variant="outline" className="text-xs">
+                  {a.name}{a.quantity > 1 ? ` ×${a.quantity}` : ''}
+                </Badge>
+              ))}
+            </div>
+          )}
+
           {/* Address */}
           <div className="flex items-start gap-2 text-sm">
             <MapPin className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
