@@ -263,29 +263,19 @@ export default function CheckInPage() {
         return;
       }
 
-      const selectedMaterials: CaptainCheckInMaterialInput[] = Object.entries(
-        checkedMaterials
-      )
-        .filter(([, state]) => state.checked)
-        .map(([id, state]) => {
-          const materialId = Number(id);
-          const material = materialsMap.get(materialId);
-          const fallbackQuantity = material?.minimumQuantity ?? 0;
-          const quantity = state.quantity ?? fallbackQuantity;
+      // All required materials must be reported — present ones with is_missing: false,
+      // absent ones with is_missing: true. The backend rejects if any required ID is omitted.
+      const selectedMaterials: CaptainCheckInMaterialInput[] = materials.map((material) => {
+        const state = checkedMaterials[material.id];
+        const isChecked = Boolean(state?.checked);
+        return {
+          material_id: material.id,
+          quantity_reported: isChecked ? (state.quantity ?? 0) : 0,
+          is_missing: !isChecked,
+        };
+      });
 
-          return {
-            material_id: materialId,
-            quantity_reported: quantity,
-            is_missing: false,
-          };
-        })
-        .filter(
-          (material) =>
-            material.quantity_reported !== undefined &&
-            material.quantity_reported > 0
-        );
-
-      if (selectedMaterials.length === 0) {
+      if (selectedMaterials.every((m) => m.is_missing)) {
         toast.error(t("checkIn.materialsChecklist"));
         setIsSubmitting(false);
         return;

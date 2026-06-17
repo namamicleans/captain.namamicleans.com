@@ -226,7 +226,11 @@ export default function JobExecutionPage() {
     };
 
     prefillExecution();
-    return () => { isMounted = false; };
+    return () => {
+      isMounted = false;
+      // Reset so React Strict Mode's double-invoke doesn't skip the second fetch.
+      hasPrefilledExecution.current = null;
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [job?.id]);
 
