@@ -37,6 +37,8 @@ export interface CaptainShiftLog {
   checkOutTime: string | null;
   startOdometer: number | null;
   endOdometer: number | null;
+  startOdometerImage: string | null;
+  endOdometerImage: string | null;
   notes: string | null;
   status: CaptainShiftStatus;
   metadata: Record<string, unknown> | null;
@@ -62,6 +64,7 @@ export interface CaptainCheckInMaterialInput {
 export interface CaptainCheckInRequest {
   selfie: string;
   start_odometer?: number | null;
+  start_odometer_image?: string;
   materials: CaptainCheckInMaterialInput[];
   metadata: Record<string, unknown>;
   shiftDate?: string;
@@ -69,6 +72,7 @@ export interface CaptainCheckInRequest {
 
 export interface CaptainCheckOutRequest {
   endOdometer: number;
+  endOdometerImage: string;
   notes?: string;
   metadata?: Record<string, unknown>;
   shiftDate?: string;

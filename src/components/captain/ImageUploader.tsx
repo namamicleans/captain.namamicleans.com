@@ -4,6 +4,7 @@ import { useState, useRef } from 'react';
 import NextImage from 'next/image';
 import { Camera, X, Check } from 'lucide-react';
 import { cn } from '@shared/utils';
+import { DEFAULT_MAX_IMAGE_SIZE_MB } from '@/shared/utils/images';
 import { toast } from 'sonner';
 
 interface ImageCompressionOptions {
@@ -22,6 +23,7 @@ interface ImageUploaderProps {
   label?: string;
   compress?: ImageCompressionOptions;
   onImageCaptured?: (payload: { dataUrl: string; capturedAt: string }) => void;
+  maxFileSizeMB?: number;
 }
 
 async function readFileAsDataUrl(file: Blob): Promise<string> {
@@ -93,6 +95,7 @@ export function ImageUploader({
   label = "Capture Photos",
   compress,
   onImageCaptured,
+  maxFileSizeMB,
 }: ImageUploaderProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isCapturing, setIsCapturing] = useState(false);
@@ -105,9 +108,23 @@ export function ImageUploader({
     fileInputRef.current?.click();
   };
 
+  const maxFileSizeMBProp = maxFileSizeMB ?? DEFAULT_MAX_IMAGE_SIZE_MB;
+
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    if (!file.type || !file.type.startsWith('image/')) {
+      toast.error('Please select an image file.');
+      e.target.value = '';
+      return;
+    }
+
+    if (file.size > maxFileSizeMBProp * 1024 * 1024) {
+      toast.error(`Image too large. Max ${maxFileSizeMBProp} MB.`);
+      e.target.value = '';
+      return;
+    }
 
     setIsCapturing(true);
 

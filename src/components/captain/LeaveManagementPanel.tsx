@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 
 import { useCaptain } from "@/context/CaptainContext";
 import type { CaptainLeaveRequest } from "@/types/captain";
+import { formatDateIST } from "@/shared/utils/datetime";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -38,14 +39,6 @@ const EMPTY_FORM: LeaveFormState = {
 
 function toDateInputString(date: Date): string {
   return date.toISOString().split("T")[0];
-}
-
-function toDisplayDate(value: string): string {
-  return new Date(value).toLocaleDateString("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
 }
 
 function parseErrorMessage(rawError: string | null): string | null {
@@ -188,6 +181,16 @@ export function LeaveManagementPanel() {
   const handleCreateDraft = () => {
     if (!form.start_date || !form.end_date) {
       toast.error(t("leaves.form.dateRequired"));
+      return;
+    }
+
+    if (form.start_date > form.end_date) {
+      toast.error("Start date must be before or equal to end date");
+      return;
+    }
+
+    if (form.start_date === form.end_date && form.start_time && form.end_time && form.start_time >= form.end_time) {
+      toast.error("Start time must be before end time");
       return;
     }
 
@@ -370,7 +373,7 @@ export function LeaveManagementPanel() {
                   <div>
                     <p className="font-semibold text-foreground">{leave.request_code}</p>
                     <p className="text-xs text-muted-foreground">
-                      {toDisplayDate(leave.start_date)} - {toDisplayDate(leave.end_date)}
+                      {formatDateIST(leave.start_date)} - {formatDateIST(leave.end_date)}
                     </p>
                   </div>
                   <Badge variant="outline" className={leaveStatusClass(leave.status)}>
@@ -447,8 +450,7 @@ export function LeaveManagementPanel() {
                   <div className="flex justify-between gap-2">
                     <span className="text-muted-foreground">{t("leaves.detail.window")}</span>
                     <span className="font-medium text-foreground">
-                      {toDisplayDate(leaveDetail.start_date)} - {" "}
-                      {toDisplayDate(leaveDetail.end_date)}
+                      {formatDateIST(leaveDetail.start_date)} - {formatDateIST(leaveDetail.end_date)}
                     </span>
                   </div>
                   <div className="flex justify-between gap-2">

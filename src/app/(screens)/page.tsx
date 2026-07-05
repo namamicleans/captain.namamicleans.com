@@ -15,7 +15,7 @@ import { Separator } from "@/components/ui/separator";
 import { FlipWords } from "@/components/ui/flip-text";
 
 export default function HomePage() {
-  const { captain, isCheckedIn, jobs } = useCaptain();
+  const { captain, isCurrentlyCheckedIn, jobs } = useCaptain();
   const router = useRouter();
   const { t } = useTranslation();
   const welcome = [
@@ -104,7 +104,7 @@ export default function HomePage() {
       {/* Content */}
       <main className="flex-1 p-4 max-w-lg mx-auto space-y-4 -mt-6 rounded-t-3xl bg-background z-30">
         {/* Quick Stats */}
-        {isCheckedIn && (
+        {isCurrentlyCheckedIn && (
           <div className="grid grid-cols-3 gap-3">
             <div className="bg-card rounded-xl p-3 text-center border border-border">
               <p className="text-2xl font-bold text-foreground">
@@ -134,10 +134,10 @@ export default function HomePage() {
         )}
 
         {/* Earnings Card */}
-        {isCheckedIn && <EarningsCard />}
+        {isCurrentlyCheckedIn && <EarningsCard />}
 
         {/* Upcoming Jobs */}
-        {isCheckedIn && todaysJobs.length > 0 && (
+        {isCurrentlyCheckedIn && todaysJobs.length > 0 && (
           <section>
             <div className="flex items-center justify-between mb-3">
               <h2 className="font-semibold text-foreground">
@@ -167,9 +167,9 @@ export default function HomePage() {
         )}
 
         {/* Not Checked In State */}
-        {!isCheckedIn && (
+        {!isCurrentlyCheckedIn && (
           <div className="text-center py-12">
-            <div className="text-6xl mb-4">
+            <div className="mb-4 flex justify-center">
               <CheckinAnimation />
             </div>
             <h2 className="text-xl font-semibold text-foreground mb-2">

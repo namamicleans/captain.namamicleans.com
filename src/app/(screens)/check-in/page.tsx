@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Camera, CheckCircle2, Gauge, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { StepProgress } from "@/components/captain/StepProgress";
 import { MaterialsChecklist } from "@/components/captain/MaterialsChecklist";
 import { ImageUploader } from "@/components/captain/ImageUploader";
@@ -15,6 +14,8 @@ import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { CaptainCheckInMaterialInput } from "@/types/captain";
 import { usePermissions } from "@/shared/hooks/usePermissions";
+import { formatDateTimeIST } from "@/shared/utils/datetime";
+import { OdometerInput } from "@/components/captain/OdometerInput";
 
 interface MaterialCheckState {
   checked: boolean;
@@ -53,6 +54,7 @@ export default function CheckInPage() {
     Record<number, MaterialCheckState>
   >({});
   const [odometer, setOdometer] = useState("");
+  const [odometerImage, setOdometerImage] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const materialsMap = useMemo(() => {
@@ -89,7 +91,11 @@ export default function CheckInPage() {
           !isShiftLoading && materials.length > 0 && allRequiredMaterialsChecked
         );
       case 2:
-        return odometer.length > 0 && Number.parseFloat(odometer) > 0;
+        return (
+          odometer.length > 0 &&
+          Number.parseFloat(odometer) > 0 &&
+          odometerImage.length >= 1
+        );
       default:
         return false;
     }
@@ -306,6 +312,7 @@ export default function CheckInPage() {
       const payload = {
         selfie: selfiePayload,
         start_odometer: odometer ? Number.parseFloat(odometer) : undefined,
+        start_odometer_image: odometerImage[0],
         materials: selectedMaterials,
         metadata,
       };
@@ -340,8 +347,7 @@ export default function CheckInPage() {
               {t("checkIn.title")}
             </h1>
             <p className="text-sm text-muted-foreground">
-              {t("common.loading").replace("...", "")} {currentStep + 1} /{" "}
-              {steps.length}
+              Step {currentStep + 1} of {steps.length}
             </p>
           </div>
         </div>
@@ -416,7 +422,7 @@ export default function CheckInPage() {
                   <p className="text-muted-foreground">
                     {t("checkIn.capturedAt", {
                       defaultValue: "Captured at {{time}}",
-                      time: new Date(selfieMeta.capturedAt).toLocaleString(),
+                      time: formatDateTimeIST(selfieMeta.capturedAt),
                     })}
                   </p>
                 </div>
@@ -457,26 +463,27 @@ export default function CheckInPage() {
               </div>
 
               <div className="space-y-4">
+                {/* Image first, then number input */}
                 <div className="space-y-2">
-                  <label
-                    htmlFor="odometer-input"
-                    className="text-sm font-medium text-foreground"
-                  >
-                    Current Odometer Reading (km)
-                  </label>
-                  <Input
-                    id="odometer-input"
-                    type="number"
-                    placeholder="e.g., 45678"
-                    value={odometer}
-                    onChange={(e) => setOdometer(e.target.value)}
-                    className="text-lg h-14 text-center font-semibold"
+                  <ImageUploader
+                    images={odometerImage}
+                    onImagesChange={setOdometerImage}
+                    minImages={1}
+                    maxImages={1}
+                    cameraOnly={true}
+                    compress={{
+                      maxWidth: 960,
+                      maxHeight: 960,
+                      quality: 0.72,
+                      mimeType: "image/jpeg",
+                    }}
+                    label="Capture Odometer Reading"
                   />
-                  <p className="text-xs text-muted-foreground text-center">
-                    Enter the exact reading shown on your vehicle&apos;s
-                    odometer
-                  </p>
                 </div>
+
+                <hr className="border-border" />
+
+                <OdometerInput value={odometer} onValueChange={setOdometer} />
               </div>
 
               <div className="flex items-center gap-2 p-3 bg-accent/50 rounded-lg">

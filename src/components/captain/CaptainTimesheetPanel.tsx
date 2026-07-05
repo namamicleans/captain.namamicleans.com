@@ -59,8 +59,19 @@ function parseTimeToMinutes(value: string | null): number | null {
   if (!value) {
     return null;
   }
-  const normalized = value.trim();
-  const match = TIME_PATTERN.exec(normalized);
+
+  let timeStr = value.trim();
+
+  // Handle ISO datetime strings: extract time portion after T or space
+  const separatorIdx = timeStr.search(/[T ]/);
+  if (separatorIdx !== -1) {
+    timeStr = timeStr.slice(separatorIdx + 1);
+  }
+
+  // Strip timezone suffix: +HH:MM, -HH:MM, Z
+  timeStr = timeStr.replace(/[+-]\d{2}:\d{2}$/, "").replace(/Z$/i, "");
+
+  const match = TIME_PATTERN.exec(timeStr);
   if (!match) {
     return null;
   }
@@ -207,25 +218,42 @@ function buildWorkedOrNoShowDayItem(
   shift: CaptainTimesheet["shifts"][number] | undefined,
   t: TranslateFn
 ): DayStatusItem | null {
-  const checkInMinutes = parseTimeToMinutes(shift?.checkInTime ?? null);
-  const checkOutMinutes = parseTimeToMinutes(shift?.checkOutTime ?? null);
+  if (!shift) {
+    // No shift at all for this date
+    if (isDateInPast(date)) {
+      return {
+        kind: "noShow",
+        badgeLabel: t("leaves.timesheet.labels.noShow"),
+      };
+    }
+    // Today/future dates with no shift remain blank
+    return null;
+  }
 
-  if (
-    shift &&
-    checkInMinutes !== null &&
-    checkOutMinutes !== null &&
-    checkOutMinutes > checkInMinutes
-  ) {
-    const workedHours = (checkOutMinutes - checkInMinutes) / 60;
-    const hourBandKey = getHourBandKey(workedHours);
+  const checkInMinutes = parseTimeToMinutes(shift.checkInTime ?? null);
 
+  // If we have a valid check-in time, the captain was present this day
+  if (checkInMinutes !== null) {
+    const checkOutMinutes = parseTimeToMinutes(shift.checkOutTime ?? null);
+
+    if (checkOutMinutes !== null && checkOutMinutes > checkInMinutes) {
+      // Full shift with both check-in and check-out — show hour band
+      const workedHours = (checkOutMinutes - checkInMinutes) / 60;
+      const hourBandKey = getHourBandKey(workedHours);
+      return {
+        kind: "worked",
+        badgeLabel: t(`leaves.timesheet.hourBands.${hourBandKey}`),
+      };
+    }
+
+    // Checked in but no valid check-out — still present, use generic label
     return {
       kind: "worked",
-      badgeLabel: t(`leaves.timesheet.hourBands.${hourBandKey}`),
+      badgeLabel: t("leaves.timesheet.labels.worked"),
     };
   }
 
-  // Past dates with no valid shift should be marked as "No Show"
+  // Shift record exists but no valid check-in time — treat as no-show for past dates
   if (isDateInPast(date)) {
     return {
       kind: "noShow",
@@ -233,7 +261,6 @@ function buildWorkedOrNoShowDayItem(
     };
   }
 
-  // Today/future dates with no valid shift should remain blank
   return null;
 }
 

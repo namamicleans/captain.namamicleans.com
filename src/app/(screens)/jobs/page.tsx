@@ -8,10 +8,8 @@ import { useRouter } from 'next/navigation';
 import { CheckinAnimation } from '@/components/shared/lottieanimations';
 
 export default function JobsPage() {
-  const { jobs, isCheckedIn } = useCaptain();
+  const { jobs, isCurrentlyCheckedIn } = useCaptain();
   const router = useRouter();
-
-  console.log('Jobs data:', jobs);
 
   const scheduledJobs = jobs.filter(job => job.status === 'scheduled');
   const ongoingJobs = jobs.filter(job => job.status === 'ongoing');
@@ -28,11 +26,13 @@ export default function JobsPage() {
     router.push(`/job/${job.id}/execute`);
   };
 
-  if (!isCheckedIn) {
+  if (!isCurrentlyCheckedIn) {
     return (
       <div className="min-h-screen bg-background pb-20 flex items-center justify-center">
         <div className="text-center p-4">
-          <CheckinAnimation />
+          <div className="mb-4 flex justify-center">
+            <CheckinAnimation />
+          </div>
           <h2 className="text-xl font-semibold text-foreground mb-2">Check In Required</h2>
           <p className="text-muted-foreground mb-4">
             You need to check in before viewing jobs

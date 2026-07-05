@@ -9,18 +9,28 @@ import { useCaptain } from "@/context/CaptainContext";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
-import { Input } from "@/components/ui/input";
+import { ImageUploader } from "@/components/captain/ImageUploader";
 import { usePermissions } from "@/shared/hooks/usePermissions";
+import { formatDateTimeIST } from "@/shared/utils/datetime";
+import { OdometerInput } from "@/components/captain/OdometerInput";
 
 export default function CheckOutPage() {
   const router = useRouter();
-  const { checkOut, todayAttendance, jobs, isCheckOutInFlight } =
-    useCaptain();
+  const {
+    checkOut,
+    todayAttendance,
+    jobs,
+    isCheckOutInFlight,
+    isCheckedOut,
+    isShiftLoading,
+  } = useCaptain();
   const { getCurrentLocation, requestLocationPermission } = usePermissions();
 
   const [notes, setNotes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [odometer, setOdometer] = useState("");
+  const [odometerImage, setOdometerImage] = useState<string[]>([]);
+  const [guardReady, setGuardReady] = useState(false);
 
   const completedJobs = jobs.filter((j) => j.status === "completed").length;
 
@@ -32,11 +42,38 @@ export default function CheckOutPage() {
     }
   }, [todayAttendance?.endOdometer]);
 
+  // Guard against invalid states (redirect after data has loaded)
+  useEffect(() => {
+    if (isShiftLoading) return;
+
+    if (isCheckedOut) {
+      toast.error("You have already checked out today");
+      router.replace("/");
+    } else if (!todayAttendance || todayAttendance.status === "pending") {
+      toast.error("No active shift to check out from");
+      router.replace("/");
+    } else {
+      setGuardReady(true);
+    }
+  }, [todayAttendance, isCheckedOut, isShiftLoading, router]);
+
+  // Show nothing while guard hasn't resolved (loading or redirecting)
+  if (!guardReady) {
+    return null;
+  }
+
+  const canSubmit = odometer.trim() !== "" && Number.parseFloat(odometer) > 0 && odometerImage.length >= 1 && !isSubmitting && !isCheckOutInFlight;
+
   const handleSubmit = async () => {
     const odometerValue = parseFloat(odometer);
 
     if (!Number.isFinite(odometerValue) || odometerValue <= 0) {
       toast.error("Enter a valid odometer reading");
+      return;
+    }
+
+    if (odometerImage.length < 1) {
+      toast.error("Odometer photo is required");
       return;
     }
 
@@ -62,6 +99,7 @@ export default function CheckOutPage() {
     try {
       const result = await checkOut({
         endOdometer: odometerValue,
+        endOdometerImage: odometerImage[0],
         notes: notes || undefined,
         shiftDate: todayAttendance?.shiftDate,
         metadata: {
@@ -115,7 +153,7 @@ export default function CheckOutPage() {
                   Check-in Time
                 </p>
                 <p className="text-xl font-bold">
-                  {todayAttendance?.checkInTime}
+                  {formatDateTimeIST(todayAttendance?.checkInTime)}
                 </p>
               </div>
               <div>
@@ -156,21 +194,27 @@ export default function CheckOutPage() {
             </div>
 
             <div className="space-y-4">
+              {/* Image first, then number input */}
               <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">
-                  Current Odometer Reading (km)
-                </label>
-                <Input
-                  type="number"
-                  placeholder="e.g., 45678"
-                  value={odometer}
-                  onChange={(e) => setOdometer(e.target.value)}
-                  className="text-lg h-14 text-center font-semibold"
+                <ImageUploader
+                  images={odometerImage}
+                  onImagesChange={setOdometerImage}
+                  minImages={1}
+                  maxImages={1}
+                  cameraOnly={true}
+                  compress={{
+                    maxWidth: 960,
+                    maxHeight: 960,
+                    quality: 0.72,
+                    mimeType: "image/jpeg",
+                  }}
+                  label="Capture Odometer Reading"
                 />
-                <p className="text-xs text-muted-foreground text-center">
-                  Enter the exact reading shown on your vehicle&apos;s odometer
-                </p>
               </div>
+
+              <hr className="border-border" />
+
+              <OdometerInput value={odometer} onValueChange={setOdometer} />
             </div>
 
             <div className="flex items-center gap-2 p-3 bg-accent/50 rounded-lg">
@@ -219,7 +263,7 @@ export default function CheckOutPage() {
         <div className="max-w-lg mx-auto">
           <Button
             className="w-full h-12 text-lg bg-destructive hover:bg-destructive/90"
-            disabled={isSubmitting || isCheckOutInFlight}
+            disabled={!canSubmit}
             onClick={handleSubmit}
           >
             {isSubmitting ? (

@@ -24,6 +24,7 @@ import type {
   Job,
 } from "@/types/captain";
 import type { ServerActionResponse } from "@/types/generic";
+import { ACCEPTED_IMAGE_MIMES } from "@/shared/utils/images";
 
 type CaptainMaterialApi = {
   id: number;
@@ -55,6 +56,8 @@ type CaptainShiftLogApi = {
   checkout_time: string | null;
   start_odometer: number | null;
   end_odometer: number | null;
+  start_odometer_image: string | null;
+  end_odometer_image: string | null;
   notes: string | null;
   status: string;
   metadata: Record<string, unknown> | null;
@@ -256,6 +259,8 @@ function transformShiftLog(api: CaptainShiftLogApi): CaptainShiftLog {
     checkOutTime: api.checkout_time,
     startOdometer: api.start_odometer,
     endOdometer: api.end_odometer,
+    startOdometerImage: api.start_odometer_image ?? null,
+    endOdometerImage: api.end_odometer_image ?? null,
     notes: api.notes,
     status: normalizedStatus,
     metadata: api.metadata,
@@ -498,6 +503,8 @@ function transformJobExecution(api: JobExecutionApi): CaptainJobExecution {
   };
 }
 
+
+
 function decodeBase64Image(base64Data: string, filename = DEFAULT_SELFIE_FILENAME): File | null {
   if (!base64Data) {
     return null;
@@ -510,7 +517,7 @@ function decodeBase64Image(base64Data: string, filename = DEFAULT_SELFIE_FILENAM
 
   const mime = match[1];
   const payload = match[2];
-  if (!mime || !payload) {
+  if (!mime || !payload || !ACCEPTED_IMAGE_MIMES.includes(mime)) {
     return null;
   }
 
@@ -618,6 +625,14 @@ export async function submitCaptainCheckIn(
     );
   }
 
+  if (!payload.start_odometer_image) {
+    return createErrorResponse<CaptainShiftLog>(
+      "Odometer photo is required. Please capture an image of your odometer reading.",
+      "CHECK_IN_ODOMETER_IMAGE_REQUIRED",
+      null
+    );
+  }
+
   if (!payload.metadata || Object.keys(payload.metadata).length === 0) {
     return createErrorResponse<CaptainShiftLog>(
       "Selfie metadata missing. Retake the selfie to capture location.",
@@ -635,8 +650,21 @@ export async function submitCaptainCheckIn(
     );
   }
 
+  const odometerImageFile = decodeBase64Image(
+    payload.start_odometer_image,
+    "odometer.jpg"
+  );
+  if (!odometerImageFile) {
+    return createErrorResponse<CaptainShiftLog>(
+      "Invalid odometer photo data. Please capture again.",
+      "CHECK_IN_ODOMETER_IMAGE_INVALID",
+      null
+    );
+  }
+
   const formData = new FormData();
   formData.append("selfie", selfieFile);
+  formData.append("start_odometer_image", odometerImageFile);
 
   if (payload.start_odometer !== undefined && payload.start_odometer !== null) {
     formData.append("start_odometer", String(payload.start_odometer));
@@ -678,22 +706,55 @@ export async function submitCaptainCheckIn(
 export async function submitCaptainCheckOut(
   payload: CaptainCheckOutRequest
 ): Promise<ServerActionResponse<CaptainShiftLog>> {
-  const body: Record<string, unknown> = {
-    end_odometer: payload.endOdometer,
-  };
+  if (!payload.endOdometerImage) {
+    return createErrorResponse<CaptainShiftLog>(
+      "Odometer photo is required. Please capture an image of your closing odometer reading.",
+      "CHECK_OUT_ODOMETER_IMAGE_REQUIRED",
+      null
+    );
+  }
+
+  if (!Number.isFinite(payload.endOdometer) || payload.endOdometer <= 0) {
+    return createErrorResponse<CaptainShiftLog>(
+      "Enter a valid odometer reading.",
+      "CHECK_OUT_ODOMETER_INVALID",
+      null
+    );
+  }
+
+  const odometerImageFile = decodeBase64Image(
+    payload.endOdometerImage,
+    "odometer.jpg"
+  );
+  if (!odometerImageFile) {
+    return createErrorResponse<CaptainShiftLog>(
+      "Invalid odometer photo data. Please capture again.",
+      "CHECK_OUT_ODOMETER_IMAGE_INVALID",
+      null
+    );
+  }
+
+  const formData = new FormData();
+  formData.append("end_odometer", String(payload.endOdometer));
+  formData.append("end_odometer_image", odometerImageFile);
 
   if (payload.notes) {
-    body.notes = payload.notes;
+    formData.append("notes", payload.notes);
   }
 
   if (payload.metadata) {
-    body.metadata = payload.metadata;
+    formData.append("metadata", JSON.stringify(payload.metadata));
   }
 
-  const result = await fetchWithSession<
-    Record<string, unknown>,
-    CaptainShiftLogApi
-  >(apiPost, "/api/service/captain/shifts/check-out/", body);
+  if (payload.shiftDate) {
+    formData.append("shift_date", payload.shiftDate);
+  }
+
+  const result = await fetchWithSession<FormData, CaptainShiftLogApi>(
+    apiPost,
+    "/api/service/captain/shifts/check-out/",
+    formData
+  );
 
   if (!result.success || !result.data) {
     return {

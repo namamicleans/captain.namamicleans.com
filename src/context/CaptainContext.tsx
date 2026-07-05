@@ -86,6 +86,8 @@ interface CaptainContextType {
   todayAttendance: CaptainShiftLog | null;
   materials: CaptainMaterial[];
   isCheckedIn: boolean;
+  isCurrentlyCheckedIn: boolean;
+  isCheckedOut: boolean;
   isShiftLoading: boolean;
   isCheckInInFlight: boolean;
   isCheckOutInFlight: boolean;
@@ -379,6 +381,8 @@ export function CaptainProvider({
       isCheckedIn: Boolean(
         todayAttendance && todayAttendance.status !== "pending"
       ),
+      isCurrentlyCheckedIn: todayAttendance?.status === "checked_in",
+      isCheckedOut: todayAttendance?.status === "checked_out",
       isShiftLoading: shiftQuery.isPending || shiftQuery.isFetching,
       isCheckInInFlight: checkInMutation.isPending,
       isCheckOutInFlight: checkOutMutation.isPending,
