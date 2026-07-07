@@ -30,6 +30,7 @@ const nextConfig = {
         hostname: 'crm.namamicleans.com',
       }
     ],
+    unoptimized: true,
   },
   experimental: {
     serverActions: {
@@ -39,3 +40,5 @@ const nextConfig = {
 }
 
 module.exports = withPWA(nextConfig)
+
+import('@opennextjs/cloudflare').then(m => m.initOpenNextCloudflareForDev());

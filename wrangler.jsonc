@@ -1,0 +1,30 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"main": ".open-next/worker.js",
+	"name": "namami-captain",
+	"compatibility_date": "2026-07-07",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"vars": {
+		// process.env.SERVER_URL used in src/core/http/client.ts is a plain
+		// (non-NEXT_PUBLIC) server-side env var — Next.js does not inline
+		// these at build time, so it must be wired as a real Workers
+		// runtime var here or it's undefined at runtime and silently falls
+		// back to "http://localhost:8000" (see admin.namamicleans's history
+		// for the full story on this bug).
+		"SERVER_URL": "https://api.namamicleans.com"
+	},
+	"assets": {
+		"directory": ".open-next/assets",
+		"binding": "ASSETS"
+	},
+	"services": [
+		{
+			// Self-reference service binding, the service name must match the worker name
+			// see https://opennext.js.org/cloudflare/caching
+			"binding": "WORKER_SELF_REFERENCE",
+			"service": "namami-captain"
+		}
+	]
+}
