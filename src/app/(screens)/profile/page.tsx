@@ -21,6 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import packageJson from "../../../../package.json";
 
 const languages = [
   { code: 'en', name: 'English', nativeName: 'English' },
@@ -319,7 +320,7 @@ export default function ProfilePage() {
 
         {/* App Version */}
         <p className="text-center text-sm text-muted-foreground">
-          Captain App v1.0.0
+          Captain App v{packageJson.version}
         </p>
       </main>
     </div>
