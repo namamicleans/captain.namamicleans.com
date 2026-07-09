@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { Providers } from "@/components/shared/providers";
 import { ThemeColorSync } from "@/components/shared/ThemeColorSync";
+import DevBanner from "@/components/DevBanner";
 import {
   getSession,
   invalidateSession,
@@ -117,6 +118,7 @@ export default async function RootLayout({
           }}
         />
         <ThemeColorSync />
+        <DevBanner />
         <Providers
           initialUser={session?.user || null}
           refreshSession={refreshSessionIfNeeded}

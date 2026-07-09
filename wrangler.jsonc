@@ -26,5 +26,23 @@
 			"binding": "WORKER_SELF_REFERENCE",
 			"service": "namami-captain"
 		}
-	]
+	],
+	"env": {
+		"dev": {
+			"name": "namami-captain-dev",
+			"vars": {
+				"SERVER_URL": "https://dev-api.namamicleans.com"
+			},
+			"assets": {
+				"directory": ".open-next/assets",
+				"binding": "ASSETS"
+			},
+			"services": [
+				{
+					"binding": "WORKER_SELF_REFERENCE",
+					"service": "namami-captain-dev"
+				}
+			]
+		}
+	}
 }
