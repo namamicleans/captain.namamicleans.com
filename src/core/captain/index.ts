@@ -13,6 +13,7 @@ export {
   submitCaptainLeave,
   withdrawCaptainLeave,
   getCaptainTimesheet,
+  getCaptainPayslips,
   submitCaptainCheckIn,
   submitCaptainCheckOut,
 } from "./actions";

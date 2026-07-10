@@ -24,6 +24,7 @@ import type {
   CaptainLeaveDraftRequest,
   CaptainLeaveRequest,
   CaptainMaterial,
+  CaptainPayslip,
   CaptainShiftLog,
   CaptainTimesheet,
   CaptainTimesheetFilters,
@@ -79,6 +80,7 @@ export interface CaptainActions {
   fetchTimesheet: (
     params?: CaptainTimesheetFilters
   ) => Promise<ServerActionResponse<CaptainTimesheet>>;
+  fetchPayslips: () => Promise<ServerActionResponse<CaptainPayslip[]>>;
 }
 
 interface CaptainContextType {
@@ -136,6 +138,7 @@ interface CaptainContextType {
   fetchTimesheet: (
     params?: CaptainTimesheetFilters
   ) => Promise<ServerActionResponse<CaptainTimesheet>>;
+  fetchPayslips: () => Promise<ServerActionResponse<CaptainPayslip[]>>;
 }
 
 const buildCaptainProfile = (user: UserResponse["user"]): Captain => ({
@@ -372,6 +375,11 @@ export function CaptainProvider({
     [actions]
   );
 
+  const fetchPayslips = useCallback(
+    async () => actions.fetchPayslips(),
+    [actions]
+  );
+
   // Compute context value - always called, regardless of auth state
   const contextValue = useMemo(
     () => ({
@@ -406,6 +414,7 @@ export function CaptainProvider({
       submitLeave,
       withdrawLeave,
       fetchTimesheet,
+      fetchPayslips,
     }),
     [
       captain,
@@ -434,6 +443,7 @@ export function CaptainProvider({
       submitLeave,
       withdrawLeave,
       fetchTimesheet,
+      fetchPayslips,
     ]
   );
 

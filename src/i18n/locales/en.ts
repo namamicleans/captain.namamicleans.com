@@ -231,6 +231,8 @@ export const en = {
     title: 'Profile',
     documents: 'Documents',
     documentsDesc: 'View your uploaded documents',
+    payslips: 'Payslips',
+    payslipsDesc: 'View and download your payslips',
     privacy: 'Privacy & Security',
     privacyDesc: 'Manage your account security',
     help: 'Help & Support',

@@ -17,6 +17,7 @@ import {
   getCaptainLeaveBalance,
   getCaptainLeaveDetail,
   getCaptainLeaves,
+  getCaptainPayslips,
   getCaptainTimesheet,
   saveJobExecutionProgress,
   startCaptainJobExecution,
@@ -139,6 +140,7 @@ export default async function RootLayout({
             submitLeave: submitCaptainLeave,
             withdrawLeave: withdrawCaptainLeave,
             fetchTimesheet: getCaptainTimesheet,
+            fetchPayslips: getCaptainPayslips,
           }}
         >
           {children}

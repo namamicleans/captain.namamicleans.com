@@ -15,6 +15,7 @@ import type {
   CaptainLeaveDraftRequest,
   CaptainLeaveRequest,
   CaptainMaterial,
+  CaptainPayslip,
   CaptainTimesheet,
   CaptainTimesheetFilters,
   CaptainMaterialUnit,
@@ -1160,4 +1161,25 @@ export async function getCaptainTimesheet(
   }
 
   return result as ServerActionResponse<CaptainTimesheet>;
+}
+
+export async function getCaptainPayslips(): Promise<
+  ServerActionResponse<CaptainPayslip[]>
+> {
+  const result = await fetchWithSession<undefined, CaptainPayslip[]>(
+    apiGet,
+    "/api/service/captain/payslips/"
+  );
+
+  if (!result.success || !result.data) {
+    return {
+      success: result.success,
+      message: result.message,
+      code: result.code,
+      data: null,
+      error: result.error,
+    } as ServerActionResponse<CaptainPayslip[]>;
+  }
+
+  return result as ServerActionResponse<CaptainPayslip[]>;
 }

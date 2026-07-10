@@ -276,6 +276,32 @@ export interface CaptainTimesheet {
   leave_requests: CaptainLeaveRequest[];
 }
 
+export interface CaptainPayslipMiscItem {
+  id: number;
+  category_name: string | null;
+  description: string;
+  amount: string;
+  incurred_at: string | null;
+}
+
+export interface CaptainPayslip {
+  id: number;
+  year: number;
+  month: number;
+  worked_days: number;
+  leave_days: number;
+  payable_days: number;
+  base_pay: string;
+  incentive: string;
+  petrol_allowance: string;
+  misc_total: string;
+  misc_items: CaptainPayslipMiscItem[];
+  gross_pay: string;
+  status: "draft" | "paid";
+  notes: string;
+  created_at: string;
+}
+
 export interface FuelEntry {
   date: string;
   opening: number;

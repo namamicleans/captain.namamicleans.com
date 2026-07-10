@@ -1,9 +1,9 @@
 "use client";
 
-import { 
-  User, Phone, Star, HelpCircle, 
+import {
+  User, Phone, Star, HelpCircle,
   FileText, Shield, LogOut, ChevronRight, Moon, Sun,
-  Languages, MapPin, Camera, Check
+  Languages, MapPin, Camera, Check, Wallet
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -102,6 +102,7 @@ export default function ProfilePage() {
 
   const menuItems = [
     { icon: FileText, label: t('profile.documents'), description: t('profile.documentsDesc'), onClick: () => router.push('/documents') },
+    { icon: Wallet, label: t('profile.payslips'), description: t('profile.payslipsDesc'), onClick: () => router.push('/payslips') },
     { icon: Shield, label: t('profile.privacy'), description: t('profile.privacyDesc'), onClick: () => window.open('https://namamicleans.com/privacy-policy', '_blank') },
     { icon: HelpCircle, label: t('profile.help'), description: t('profile.helpDesc'), onClick: () => window.open('https://wa.me/+918770490169', '_blank') },
   ];
