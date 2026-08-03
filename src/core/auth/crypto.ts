@@ -1,9 +1,25 @@
 import "server-only";
-import { JWTPayload, SignJWT, jwtVerify } from "jose";
+import { EncryptJWT, JWTPayload, jwtDecrypt } from "jose";
 import { UserResponse } from "@/types/auth";
 
-const secretKey = process.env.SECRET_KEY || "secret";
-const encodedKey = new TextEncoder().encode(secretKey);
+const secretKeyEnv = process.env.SECRET_KEY;
+if (!secretKeyEnv) {
+  throw new Error(
+    "SECRET_KEY environment variable is not set. Refusing to start: without it, session tokens cannot be securely encrypted.",
+  );
+}
+
+// A256GCM needs a 32-byte key; derive one from the configured secret so any
+// length/format of SECRET_KEY works, and cache it across calls.
+let encodedKeyPromise: Promise<Uint8Array> | null = null;
+function getEncodedKey(): Promise<Uint8Array> {
+  if (!encodedKeyPromise) {
+    encodedKeyPromise = crypto.subtle
+      .digest("SHA-256", new TextEncoder().encode(secretKeyEnv))
+      .then((digest) => new Uint8Array(digest));
+  }
+  return encodedKeyPromise;
+}
 
 export interface JwtPayload extends JWTPayload {
   user: UserResponse["user"];
@@ -23,11 +39,14 @@ export async function encrypt(
     tokenExpiry: expiry,
   };
 
-  return new SignJWT(jwtPayload)
-    .setProtectedHeader({ alg: "HS256" })
+  // The session cookie carries live backend access/refresh tokens, so it
+  // must be encrypted (JWE), not just signed (JWS) — signing alone leaves
+  // the payload readable to anything that can see the raw cookie value.
+  return new EncryptJWT(jwtPayload)
+    .setProtectedHeader({ alg: "dir", enc: "A256GCM" })
     .setIssuedAt()
     .setExpirationTime("4w")
-    .sign(encodedKey);
+    .encrypt(await getEncodedKey());
 }
 
 export async function decrypt(session?: string): Promise<JwtPayload | null> {
@@ -36,9 +55,7 @@ export async function decrypt(session?: string): Promise<JwtPayload | null> {
       return null;
     }
 
-    const { payload } = await jwtVerify(session, encodedKey, {
-      algorithms: ["HS256"],
-    });
+    const { payload } = await jwtDecrypt(session, await getEncodedKey());
 
     return payload as JwtPayload;
   } catch {
