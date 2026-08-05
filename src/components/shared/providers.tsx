@@ -8,6 +8,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { BottomNav } from "@/components/captain/BottomNav";
 import { TokenRefreshMonitor } from "@/components/shared/TokenRefreshMonitor";
+import { PushNotificationPrompt } from "@/components/shared/PushNotificationPrompt";
 import "@/i18n";
 
 import type { ServerActionResponse } from "@/types/generic";
@@ -32,6 +33,7 @@ export function Providers({ children, refreshSession, invalidateSession, captain
           <Toaster />
           <Sonner />
           <TokenRefreshMonitor refreshSession={refreshSession} invalidateSession={invalidateSession} />
+          <PushNotificationPrompt user={initialUser} />
           {children}
           <BottomNav />
         </CaptainProvider>
