@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { useCaptain } from '@/context/CaptainContext';
 import { useRouter } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
+import { formatTimeIST } from '@/shared/utils/datetime';
 
 export function CheckInCard() {
   const { isCheckedIn, isCheckedOut, todayAttendance } = useCaptain();
@@ -15,11 +16,7 @@ export function CheckInCard() {
   // Already checked out — show day-complete summary, no check-in or check-out CTA
   if (isCheckedOut) {
     const checkOutTime = todayAttendance?.checkOutTime
-      ? new Date(todayAttendance.checkOutTime).toLocaleTimeString('en-IN', {
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: true,
-        })
+      ? formatTimeIST(todayAttendance.checkOutTime)
       : '--:--';
 
     return (
@@ -91,12 +88,8 @@ export function CheckInCard() {
           <div className="flex items-center gap-2 text-primary-foreground">
             <Clock className="h-4 w-4" />
             <span>
-              {todayAttendance?.checkInTime 
-                ? new Date(todayAttendance.checkInTime).toLocaleTimeString('en-IN', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    hour12: true
-                  })
+              {todayAttendance?.checkInTime
+                ? formatTimeIST(todayAttendance.checkInTime)
                 : '--:--'}
             </span>
           </div>
