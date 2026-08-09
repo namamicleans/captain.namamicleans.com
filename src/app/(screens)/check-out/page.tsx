@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { ArrowLeft, MessageSquare, LogOut, Gauge, MapPin } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { ArrowLeft, MessageSquare, LogOut, Gauge, MapPin, RotateCcw, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -13,6 +13,12 @@ import { ImageUploader } from "@/components/captain/ImageUploader";
 import { usePermissions } from "@/shared/hooks/usePermissions";
 import { formatDateTimeIST } from "@/shared/utils/datetime";
 import { OdometerInput } from "@/components/captain/OdometerInput";
+import { useDirectUploadImage } from "@/hooks/useDirectUploadImage";
+import { clearCheckOutDraft, readCheckOutDraft, useCheckOutDraft } from "@/hooks/useCheckOutDraft";
+
+function todayDateKey(): string {
+  return new Date().toISOString().split("T")[0] as string;
+}
 
 export default function CheckOutPage() {
   const router = useRouter();
@@ -23,14 +29,39 @@ export default function CheckOutPage() {
     isCheckOutInFlight,
     isCheckedOut,
     isShiftLoading,
+    getCheckOutUploadUrl,
   } = useCaptain();
   const { getCurrentLocation, requestLocationPermission } = usePermissions();
 
-  const [notes, setNotes] = useState("");
+  const dateKey = todayAttendance?.shiftDate || todayDateKey();
+  const [initialDraft] = useState(() => readCheckOutDraft(dateKey));
+
+  const [notes, setNotes] = useState(initialDraft?.notes ?? "");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [odometer, setOdometer] = useState("");
-  const [odometerImage, setOdometerImage] = useState<string[]>([]);
+  const [odometer, setOdometer] = useState(initialDraft?.odometer ?? "");
   const [guardReady, setGuardReady] = useState(false);
+
+  const getOdometerUploadUrl = useCallback(
+    (contentType: string) => getCheckOutUploadUrl(contentType),
+    [getCheckOutUploadUrl]
+  );
+  const odometerUpload = useDirectUploadImage({
+    getUploadUrl: getOdometerUploadUrl,
+    initialKey: initialDraft?.odometerImageKey ?? null,
+  });
+
+  useCheckOutDraft(dateKey, {
+    odometer,
+    odometerImageKey: odometerUpload.key,
+    notes,
+  });
+
+  useEffect(() => {
+    if (initialDraft?.odometerImageKey) {
+      toast.success("Resumed your in-progress check-out");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const completedJobs = jobs.filter((j) => j.status === "completed").length;
 
@@ -62,7 +93,13 @@ export default function CheckOutPage() {
     return null;
   }
 
-  const canSubmit = odometer.trim() !== "" && Number.parseFloat(odometer) > 0 && odometerImage.length >= 1 && !isSubmitting && !isCheckOutInFlight;
+  const canSubmit =
+    odometer.trim() !== "" &&
+    Number.parseFloat(odometer) > 0 &&
+    Boolean(odometerUpload.key) &&
+    odometerUpload.status !== "uploading" &&
+    !isSubmitting &&
+    !isCheckOutInFlight;
 
   const handleSubmit = async () => {
     const odometerValue = parseFloat(odometer);
@@ -72,7 +109,7 @@ export default function CheckOutPage() {
       return;
     }
 
-    if (odometerImage.length < 1) {
+    if (!odometerUpload.key) {
       toast.error("Odometer photo is required");
       return;
     }
@@ -99,7 +136,7 @@ export default function CheckOutPage() {
     try {
       const result = await checkOut({
         endOdometer: odometerValue,
-        endOdometerImage: odometerImage[0],
+        endOdometerImageKey: odometerUpload.key,
         notes: notes || undefined,
         shiftDate: todayAttendance?.shiftDate,
         metadata: {
@@ -116,6 +153,7 @@ export default function CheckOutPage() {
         return;
       }
 
+      clearCheckOutDraft(dateKey);
       toast.success(t("checkOut.checkOutSuccess"));
       router.push("/");
     } catch (error) {
@@ -196,20 +234,42 @@ export default function CheckOutPage() {
             <div className="space-y-4">
               {/* Image first, then number input */}
               <div className="space-y-2">
-                <ImageUploader
-                  images={odometerImage}
-                  onImagesChange={setOdometerImage}
-                  minImages={1}
-                  maxImages={1}
-                  cameraOnly={true}
-                  compress={{
-                    maxWidth: 960,
-                    maxHeight: 960,
-                    quality: 0.72,
-                    mimeType: "image/jpeg",
-                  }}
-                  label="Capture Odometer Reading"
-                />
+                {odometerUpload.isRestoredWithoutPreview ? (
+                  <div className="flex items-center justify-between gap-3 rounded-lg border border-primary/30 bg-primary/5 p-4">
+                    <div className="flex items-center gap-2 text-primary">
+                      <CheckCircle2 className="h-5 w-5" />
+                      <span className="text-sm font-medium">Odometer photo already captured</span>
+                    </div>
+                    <Button variant="ghost" size="sm" onClick={odometerUpload.reset}>
+                      <RotateCcw className="h-4 w-4 mr-1" />
+                      Retake
+                    </Button>
+                  </div>
+                ) : (
+                  <ImageUploader
+                    images={odometerUpload.images}
+                    onImagesChange={odometerUpload.onImagesChange}
+                    minImages={1}
+                    maxImages={1}
+                    cameraOnly={true}
+                    compress={{
+                      maxWidth: 960,
+                      maxHeight: 960,
+                      quality: 0.72,
+                      mimeType: "image/jpeg",
+                    }}
+                    label="Capture Odometer Reading"
+                    onImageCaptured={odometerUpload.onImageCaptured}
+                  />
+                )}
+                {odometerUpload.status === "error" && (
+                  <div className="flex items-center justify-between rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+                    <span>Upload failed.</span>
+                    <Button variant="ghost" size="sm" onClick={odometerUpload.retry}>
+                      Retry
+                    </Button>
+                  </div>
+                )}
               </div>
 
               <hr className="border-border" />
@@ -266,10 +326,10 @@ export default function CheckOutPage() {
             disabled={!canSubmit}
             onClick={handleSubmit}
           >
-            {isSubmitting ? (
+            {isSubmitting || odometerUpload.status === "uploading" ? (
               <div className="flex items-center gap-2">
                 <div className="h-5 w-5 border-2 border-destructive-foreground border-t-transparent rounded-full animate-spin" />
-                <span>Processing...</span>
+                <span>{odometerUpload.status === "uploading" ? "Uploading photo..." : "Processing..."}</span>
               </div>
             ) : (
               <span className="flex items-center gap-2">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Navigation, Phone, CheckCircle2, PartyPopper } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -25,6 +25,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useExecutionDraft, clearExecutionDraft } from '@/hooks/useExecutionDraft';
+import { useDirectUploadGallery } from '@/hooks/useDirectUploadGallery';
 
 const executionSteps = ['Before', 'Service', 'After', 'Complete'];
 const MIN_REQUIRED_BEFORE_IMAGES = 2;
@@ -60,6 +61,7 @@ export default function JobExecutionPage() {
     completeJobExecution,
     saveJobExecutionProgress,
     getJobExecution,
+    getExecutionUploadUrl,
   } = useCaptain();
 
   const job = jobs.find(j => j.id === jobId);
@@ -73,11 +75,24 @@ export default function JobExecutionPage() {
   // ── Image state ───────────────────────────────────────────────────────────
   // "Existing" = already uploaded to S3, identified by gallery row ID.
   // We send these IDs to the backend so it knows to keep them.
-  // "New" = base64 strings captured this session, sent as files.
+  // "New" = freshly captured this session — uploaded straight to R2 in the
+  // background as soon as they're taken (see useDirectUploadGallery); we only
+  // ever send the resulting object keys to the backend, never the bytes.
   const [existingBeforeIds, setExistingBeforeIds] = useState<number[]>([]);
   const [existingAfterIds, setExistingAfterIds] = useState<number[]>([]);
-  const [beforeImages, setBeforeImages] = useState<string[]>(job?.beforeImages || []);
-  const [afterImages, setAfterImages] = useState<string[]>(job?.afterImages || []);
+
+  const getBeforeUploadUrl = useCallback(
+    (contentType: string) => getExecutionUploadUrl(jobId, 'before', contentType),
+    [getExecutionUploadUrl, jobId]
+  );
+  const getAfterUploadUrl = useCallback(
+    (contentType: string) => getExecutionUploadUrl(jobId, 'after', contentType),
+    [getExecutionUploadUrl, jobId]
+  );
+  const beforeGallery = useDirectUploadGallery({ getUploadUrl: getBeforeUploadUrl });
+  const afterGallery = useDirectUploadGallery({ getUploadUrl: getAfterUploadUrl });
+  const beforeImages = beforeGallery.images;
+  const afterImages = afterGallery.images;
 
   // ── UI state ──────────────────────────────────────────────────────────────
   const [showExitDialog, setShowExitDialog] = useState(false);
@@ -165,17 +180,17 @@ export default function JobExecutionPage() {
         .filter((url): url is string => Boolean(url));
 
       if (beforeFromBackend.length > 0) {
-        setBeforeImages(beforeFromBackend);
+        beforeGallery.setExistingImages(beforeFromBackend);
         setExistingBeforeIds(execution.before_images.map(img => img.id));
       } else if (execution.before_image_urls.length > 0) {
-        setBeforeImages(execution.before_image_urls);
+        beforeGallery.setExistingImages(execution.before_image_urls);
       }
 
       if (afterFromBackend.length > 0) {
-        setAfterImages(afterFromBackend);
+        afterGallery.setExistingImages(afterFromBackend);
         setExistingAfterIds(execution.after_images.map(img => img.id));
       } else if (execution.after_image_urls.length > 0) {
-        setAfterImages(execution.after_image_urls);
+        afterGallery.setExistingImages(execution.after_image_urls);
       }
 
       // ── Restore checklist progress ────────────────────────────────────────
@@ -267,17 +282,23 @@ export default function JobExecutionPage() {
 
   const canProceed = () => {
     switch (currentStep) {
-      case 0: return beforeImages.length >= MIN_REQUIRED_BEFORE_IMAGES;
+      case 0:
+        return (
+          beforeImages.length >= MIN_REQUIRED_BEFORE_IMAGES &&
+          !beforeGallery.isUploading &&
+          !beforeGallery.hasError
+        );
       case 1: return checklistSteps.length > 0 && requiredSteps.every(id => completedSteps.includes(id));
-      case 2: return afterImages.length >= MIN_REQUIRED_AFTER_IMAGES;
+      case 2:
+        return (
+          afterImages.length >= MIN_REQUIRED_AFTER_IMAGES &&
+          !afterGallery.isUploading &&
+          !afterGallery.hasError
+        );
       case 3: return true;
       default: return false;
     }
   };
-
-  // Only send base64 (new) images to the backend — S3 URLs are already there.
-  const newBeforeImages = beforeImages.filter(img => img.startsWith('data:'));
-  const newAfterImages = afterImages.filter(img => img.startsWith('data:'));
 
   const buildChecklistPayload = () =>
     checklistSteps.map(step => ({
@@ -312,7 +333,7 @@ export default function JobExecutionPage() {
       // Fire save-progress in background — non-blocking, localStorage draft is the fallback.
       if (currentStep === 0) {
         saveJobExecutionProgress(job.id, {
-          beforeImages: newBeforeImages,
+          beforeImageKeys: beforeGallery.newKeys,
           existingBeforeImageIds: existingBeforeIds,
           currentStep: nextStep,
         }).catch(() => {});
@@ -324,7 +345,7 @@ export default function JobExecutionPage() {
         }).catch(() => {});
       } else if (currentStep === 2) {
         saveJobExecutionProgress(job.id, {
-          afterImages: newAfterImages,
+          afterImageKeys: afterGallery.newKeys,
           existingAfterImageIds: existingAfterIds,
           checklist: buildChecklistPayload(),
           captainNotes: notes || undefined,
@@ -352,24 +373,33 @@ export default function JobExecutionPage() {
   };
 
   const handleBeforeImagesChange = (images: string[]) => {
-    setBeforeImages(images);
     const remainingExistingIds = existingBeforeIds.filter((_, idx) => {
       const url = beforeImages[idx];
       return url && images.includes(url);
     });
     setExistingBeforeIds(remainingExistingIds);
+    beforeGallery.onImagesChange(images);
   };
 
   const handleAfterImagesChange = (images: string[]) => {
-    setAfterImages(images);
     const remainingExistingIds = existingAfterIds.filter((_, idx) => {
       const url = afterImages[idx];
       return url && images.includes(url);
     });
     setExistingAfterIds(remainingExistingIds);
+    afterGallery.onImagesChange(images);
   };
 
   const handleComplete = async () => {
+    if (beforeGallery.isUploading || afterGallery.isUploading) {
+      toast.error('Photos are still uploading. Please wait a moment and try again.');
+      return;
+    }
+    if (beforeGallery.hasError || afterGallery.hasError) {
+      toast.error('Some photos failed to upload. Please retry them before completing.');
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const checklist = checklistSteps.map(step => ({
@@ -380,8 +410,8 @@ export default function JobExecutionPage() {
       }));
 
       const completionResult = await completeJobExecution(job.id, {
-        beforeImages: newBeforeImages,
-        afterImages: newAfterImages,
+        beforeImageKeys: beforeGallery.newKeys,
+        afterImageKeys: afterGallery.newKeys,
         existingBeforeImageIds: existingBeforeIds,
         existingAfterImageIds: existingAfterIds,
         checklist,
@@ -420,8 +450,8 @@ export default function JobExecutionPage() {
     if (job.status === 'ongoing') {
       setIsSavingProgress(true);
       await saveJobExecutionProgress(job.id, {
-        beforeImages: newBeforeImages,
-        afterImages: newAfterImages,
+        beforeImageKeys: beforeGallery.newKeys,
+        afterImageKeys: afterGallery.newKeys,
         existingBeforeImageIds: existingBeforeIds,
         existingAfterImageIds: existingAfterIds,
         checklist: checklistSteps.length > 0 ? buildChecklistPayload() : undefined,
@@ -448,6 +478,12 @@ export default function JobExecutionPage() {
     );
     if (isStarting) return (
       <div className="flex items-center gap-2"><Spinner size="sm" /><span>Starting...</span></div>
+    );
+    if (
+      (currentStep === 0 && beforeGallery.isUploading) ||
+      (currentStep === 2 && afterGallery.isUploading)
+    ) return (
+      <div className="flex items-center gap-2"><Spinner size="sm" /><span>Uploading photos...</span></div>
     );
     if (currentStep === executionSteps.length - 1) return (
       <span className="flex items-center gap-2"><CheckCircle2 className="h-5 w-5" />Complete Job</span>
@@ -512,11 +548,20 @@ export default function JobExecutionPage() {
               <ImageUploader
                 images={beforeImages}
                 onImagesChange={handleBeforeImagesChange}
+                onImageCaptured={beforeGallery.onImageCaptured}
                 minImages={MIN_REQUIRED_BEFORE_IMAGES}
                 maxImages={MAX_ALLOWED_IMAGES}
                 label="Before Photos"
                 compress={{ maxWidth: 1280, maxHeight: 1280, quality: 0.72, mimeType: 'image/jpeg' }}
               />
+              {beforeGallery.hasError && (
+                <div className="mt-3 flex items-center justify-between rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+                  <span>Some photos failed to upload.</span>
+                  <Button variant="ghost" size="sm" onClick={beforeGallery.retryFailed}>
+                    Retry
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         )}
@@ -545,11 +590,20 @@ export default function JobExecutionPage() {
               <ImageUploader
                 images={afterImages}
                 onImagesChange={handleAfterImagesChange}
+                onImageCaptured={afterGallery.onImageCaptured}
                 minImages={MIN_REQUIRED_AFTER_IMAGES}
                 maxImages={MAX_ALLOWED_IMAGES}
                 label="After Photos"
                 compress={{ maxWidth: 1280, maxHeight: 1280, quality: 0.72, mimeType: 'image/jpeg' }}
               />
+              {afterGallery.hasError && (
+                <div className="mt-3 flex items-center justify-between rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+                  <span>Some photos failed to upload.</span>
+                  <Button variant="ghost" size="sm" onClick={afterGallery.retryFailed}>
+                    Retry
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         )}

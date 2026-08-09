@@ -62,9 +62,11 @@ export interface CaptainCheckInMaterialInput {
 }
 
 export interface CaptainCheckInRequest {
-  selfie: string;
+  /** R2 object key for the already-uploaded selfie (see uploadImageDirect). */
+  selfieKey: string;
   start_odometer?: number | null;
-  start_odometer_image?: string;
+  /** R2 object key for the already-uploaded odometer photo. */
+  startOdometerImageKey?: string;
   materials: CaptainCheckInMaterialInput[];
   metadata: Record<string, unknown>;
   shiftDate?: string;
@@ -72,7 +74,8 @@ export interface CaptainCheckInRequest {
 
 export interface CaptainCheckOutRequest {
   endOdometer: number;
-  endOdometerImage: string;
+  /** R2 object key for the already-uploaded odometer photo. */
+  endOdometerImageKey: string;
   notes?: string;
   metadata?: Record<string, unknown>;
   shiftDate?: string;
@@ -143,8 +146,9 @@ export interface CaptainJobExecutionChecklistItem {
 }
 
 export interface CaptainJobExecutionCompleteRequest {
-  beforeImages: string[];
-  afterImages: string[];
+  /** R2 object keys for newly-captured photos, already uploaded directly. */
+  beforeImageKeys: string[];
+  afterImageKeys: string[];
   /** IDs of BookingGallery rows already on the server to keep (not re-upload). */
   existingBeforeImageIds?: number[];
   existingAfterImageIds?: number[];
@@ -156,8 +160,8 @@ export interface CaptainJobExecutionCompleteRequest {
 }
 
 export interface CaptainJobExecutionSaveProgressRequest {
-  beforeImages?: string[];
-  afterImages?: string[];
+  beforeImageKeys?: string[];
+  afterImageKeys?: string[];
   existingBeforeImageIds?: number[];
   existingAfterImageIds?: number[];
   checklist?: CaptainJobExecutionChecklistItem[];

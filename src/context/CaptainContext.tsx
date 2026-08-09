@@ -34,6 +34,7 @@ import type {
 } from "@/types/captain";
 import type { ServerActionResponse } from "@/types/generic";
 import type { UserResponse } from "@/types/auth";
+import type { UploadUrlPayload } from "@/lib/directUpload";
 
 export interface CaptainActions {
   fetchShiftSummary: (params?: {
@@ -45,6 +46,18 @@ export interface CaptainActions {
   checkOut: (
     payload: CaptainCheckOutRequest
   ) => Promise<ServerActionResponse<CaptainShiftLog>>;
+  getCheckInUploadUrl: (
+    purpose: "selfie" | "start_odometer_image",
+    contentType: string
+  ) => Promise<ServerActionResponse<UploadUrlPayload>>;
+  getCheckOutUploadUrl: (
+    contentType: string
+  ) => Promise<ServerActionResponse<UploadUrlPayload>>;
+  getExecutionUploadUrl: (
+    bookingId: string,
+    purpose: "before" | "after",
+    contentType: string
+  ) => Promise<ServerActionResponse<UploadUrlPayload>>;
   fetchJobs: (
     params?: CaptainJobFilters
   ) => Promise<ServerActionResponse<Job[]>>;
@@ -102,6 +115,18 @@ interface CaptainContextType {
   checkOut: (
     payload: CaptainCheckOutRequest
   ) => Promise<ServerActionResponse<CaptainShiftLog>>;
+  getCheckInUploadUrl: (
+    purpose: "selfie" | "start_odometer_image",
+    contentType: string
+  ) => Promise<ServerActionResponse<UploadUrlPayload>>;
+  getCheckOutUploadUrl: (
+    contentType: string
+  ) => Promise<ServerActionResponse<UploadUrlPayload>>;
+  getExecutionUploadUrl: (
+    bookingId: string,
+    purpose: "before" | "after",
+    contentType: string
+  ) => Promise<ServerActionResponse<UploadUrlPayload>>;
   refreshShift: () => Promise<void>;
   setActiveJob: (job: Job | null) => void;
   updateJob: (jobId: string, updates: Partial<Job>) => void;
@@ -272,6 +297,23 @@ export function CaptainProvider({
     [checkOutMutation, queryClient, shiftQueryKey]
   );
 
+  const getCheckInUploadUrl = useCallback(
+    async (purpose: "selfie" | "start_odometer_image", contentType: string) =>
+      actions.getCheckInUploadUrl(purpose, contentType),
+    [actions]
+  );
+
+  const getCheckOutUploadUrl = useCallback(
+    async (contentType: string) => actions.getCheckOutUploadUrl(contentType),
+    [actions]
+  );
+
+  const getExecutionUploadUrl = useCallback(
+    async (bookingId: string, purpose: "before" | "after", contentType: string) =>
+      actions.getExecutionUploadUrl(bookingId, purpose, contentType),
+    [actions]
+  );
+
   const updateJob = useCallback((jobId: string, updates: Partial<Job>) => {
     setJobs((prev) =>
       prev.map((job) => (job.id === jobId ? { ...job, ...updates } : job))
@@ -301,8 +343,6 @@ export function CaptainProvider({
       if (result.success) {
         updateJob(jobId, {
           status: "completed",
-          beforeImages: payload.beforeImages,
-          afterImages: payload.afterImages,
           completedSteps: payload.checklist
             .filter((item) => item.completed)
             .map((item) => item.id),
@@ -399,6 +439,9 @@ export function CaptainProvider({
       earnings,
       checkIn,
       checkOut,
+      getCheckInUploadUrl,
+      getCheckOutUploadUrl,
+      getExecutionUploadUrl,
       refreshShift,
       setActiveJob,
       updateJob,
@@ -429,6 +472,9 @@ export function CaptainProvider({
       earnings,
       checkIn,
       checkOut,
+      getCheckInUploadUrl,
+      getCheckOutUploadUrl,
+      getExecutionUploadUrl,
       refreshShift,
       updateJob,
       completeJob,
