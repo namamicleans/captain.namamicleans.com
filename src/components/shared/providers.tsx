@@ -10,6 +10,7 @@ import { BottomNav } from "@/components/captain/BottomNav";
 import { TokenRefreshMonitor } from "@/components/shared/TokenRefreshMonitor";
 import { PushNotificationPrompt } from "@/components/shared/PushNotificationPrompt";
 import { GlobalErrorListener } from "@/components/shared/GlobalErrorListener";
+import { ServiceWorkerUpdateReload } from "@/components/shared/ServiceWorkerUpdateReload";
 import "@/i18n";
 
 import type { ServerActionResponse } from "@/types/generic";
@@ -36,6 +37,7 @@ export function Providers({ children, refreshSession, invalidateSession, captain
           <TokenRefreshMonitor refreshSession={refreshSession} invalidateSession={invalidateSession} />
           <PushNotificationPrompt user={initialUser} />
           <GlobalErrorListener />
+          <ServiceWorkerUpdateReload />
           {children}
           <BottomNav />
         </CaptainProvider>
