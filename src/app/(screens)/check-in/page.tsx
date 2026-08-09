@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Camera, CheckCircle2, Gauge, MapPin } from "lucide-react";
+import { ArrowLeft, Camera, CheckCircle2, Gauge, MapPin, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { StepProgress } from "@/components/captain/StepProgress";
@@ -16,19 +16,17 @@ import { CaptainCheckInMaterialInput } from "@/types/captain";
 import { usePermissions } from "@/shared/hooks/usePermissions";
 import { formatDateTimeIST } from "@/shared/utils/datetime";
 import { OdometerInput } from "@/components/captain/OdometerInput";
+import { useDirectUploadImage } from "@/hooks/useDirectUploadImage";
+import {
+  clearCheckInDraft,
+  readCheckInDraft,
+  useCheckInDraft,
+  type CheckInSelfieMeta,
+} from "@/hooks/useCheckInDraft";
 
 interface MaterialCheckState {
   checked: boolean;
   quantity?: number;
-}
-
-interface SelfieCaptureMeta {
-  capturedAt: string;
-  location?: {
-    latitude: number;
-    longitude: number;
-    accuracy?: number;
-  };
 }
 
 interface NavigatorWithUserAgentData extends Navigator {
@@ -39,23 +37,87 @@ interface NavigatorWithUserAgentData extends Navigator {
 
 const steps = ["Selfie", "Materials", "Odometer"];
 
+// Draft is keyed by today's date — check-in always applies to "today", and a
+// stale draft from a previous day is not something we want to resume anyway.
+function todayDateKey(): string {
+  return new Date().toISOString().split("T")[0] as string;
+}
+
+function AlreadyCapturedCard({ label, onRetake }: { label: string; onRetake: () => void }) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-lg border border-primary/30 bg-primary/5 p-4">
+      <div className="flex items-center gap-2 text-primary">
+        <CheckCircle2 className="h-5 w-5" />
+        <span className="text-sm font-medium">{label}</span>
+      </div>
+      <Button variant="ghost" size="sm" onClick={onRetake}>
+        <RotateCcw className="h-4 w-4 mr-1" />
+        Retake
+      </Button>
+    </div>
+  );
+}
+
 export default function CheckInPage() {
   const router = useRouter();
-  const { checkIn, materials, isShiftLoading, todayAttendance } = useCaptain();
+  const { checkIn, materials, isShiftLoading, todayAttendance, getCheckInUploadUrl } =
+    useCaptain();
   const { t } = useTranslation();
   const { permissions, requestLocationPermission, getCurrentLocation } =
     usePermissions();
 
+  const dateKey = useMemo(() => todayDateKey(), []);
+  const [initialDraft] = useState(() => readCheckInDraft(dateKey));
+
   const [currentStep, setCurrentStep] = useState(0);
-  const [selfie, setSelfie] = useState<string[]>([]);
-  const [selfieMeta, setSelfieMeta] = useState<SelfieCaptureMeta | null>(null);
+  const [selfieMeta, setSelfieMeta] = useState<CheckInSelfieMeta | null>(null);
   const [isFetchingLocation, setIsFetchingLocation] = useState(false);
   const [checkedMaterials, setCheckedMaterials] = useState<
     Record<number, MaterialCheckState>
   >({});
   const [odometer, setOdometer] = useState("");
-  const [odometerImage, setOdometerImage] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const getSelfieUploadUrl = useCallback(
+    (contentType: string) => getCheckInUploadUrl("selfie", contentType),
+    [getCheckInUploadUrl]
+  );
+  const getOdometerUploadUrl = useCallback(
+    (contentType: string) => getCheckInUploadUrl("start_odometer_image", contentType),
+    [getCheckInUploadUrl]
+  );
+
+  const selfieUpload = useDirectUploadImage({
+    getUploadUrl: getSelfieUploadUrl,
+    initialKey: initialDraft?.selfieKey ?? null,
+  });
+  const odometerUpload = useDirectUploadImage({
+    getUploadUrl: getOdometerUploadUrl,
+    initialKey: initialDraft?.odometerImageKey ?? null,
+  });
+
+  // Restore the rest of the draft once on mount — after the initial render so
+  // the resumed step doesn't fight the server-rendered first paint.
+  useEffect(() => {
+    if (!initialDraft) return;
+    setCurrentStep(initialDraft.currentStep);
+    setSelfieMeta(initialDraft.selfieMeta);
+    setOdometer(initialDraft.odometer);
+    setCheckedMaterials(initialDraft.checkedMaterials);
+    if (initialDraft.selfieKey || initialDraft.odometerImageKey) {
+      toast.success(t("checkIn.draftRestored", "Resumed your in-progress check-in"));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useCheckInDraft(dateKey, {
+    currentStep,
+    selfieKey: selfieUpload.key,
+    selfieMeta,
+    odometer,
+    odometerImageKey: odometerUpload.key,
+    checkedMaterials,
+  });
 
   const materialsMap = useMemo(() => {
     return new Map(materials.map((material) => [material.id, material]));
@@ -81,7 +143,8 @@ export default function CheckInPage() {
     switch (currentStep) {
       case 0:
         return (
-          selfie.length >= 1 &&
+          Boolean(selfieUpload.key) &&
+          selfieUpload.status !== "uploading" &&
           !!selfieMeta?.capturedAt &&
           !!selfieMeta?.location &&
           !isFetchingLocation
@@ -94,7 +157,8 @@ export default function CheckInPage() {
         return (
           odometer.length > 0 &&
           Number.parseFloat(odometer) > 0 &&
-          odometerImage.length >= 1
+          Boolean(odometerUpload.key) &&
+          odometerUpload.status !== "uploading"
         );
       default:
         return false;
@@ -125,11 +189,18 @@ export default function CheckInPage() {
     }
   }, [currentStep, permissions.location, requestLocationPermission]);
 
-  useEffect(() => {
-    if (selfie.length === 0) {
-      setSelfieMeta(null);
-    }
-  }, [selfie]);
+  // Only clears GPS metadata when the captain actively removes the selfie
+  // via ImageUploader (not on mount, where a restored-without-preview draft
+  // legitimately has no local image but a valid selfieMeta to keep).
+  const handleSelfieImagesChange = useCallback(
+    (images: string[]) => {
+      selfieUpload.onImagesChange(images);
+      if (images.length === 0) {
+        setSelfieMeta(null);
+      }
+    },
+    [selfieUpload]
+  );
 
   const handleNext = () => {
     if (currentStep < steps.length - 1) {
@@ -184,6 +255,7 @@ export default function CheckInPage() {
       dataUrl: string;
       capturedAt: string;
     }) => {
+      selfieUpload.onImageCaptured({ dataUrl });
       setIsFetchingLocation(true);
       try {
         const position = await getCurrentLocation();
@@ -203,14 +275,14 @@ export default function CheckInPage() {
             "Enable location services and retake the selfie."
           )
         );
-        setSelfie((prev) => prev.filter((img) => img !== dataUrl));
+        selfieUpload.reset();
         setSelfieMeta(null);
         await requestLocationPermission();
       } finally {
         setIsFetchingLocation(false);
       }
     },
-    [getCurrentLocation, requestLocationPermission, t]
+    [getCurrentLocation, requestLocationPermission, selfieUpload, t]
   );
 
   const getButtonContent = () => {
@@ -219,6 +291,18 @@ export default function CheckInPage() {
         <div className="flex items-center gap-2">
           <Spinner size="sm" />
           <span>{t("common.processing")}</span>
+        </div>
+      );
+    }
+
+    if (
+      (currentStep === 0 && selfieUpload.status === "uploading") ||
+      (currentStep === 2 && odometerUpload.status === "uploading")
+    ) {
+      return (
+        <div className="flex items-center gap-2">
+          <Spinner size="sm" />
+          <span>{t("checkIn.uploadingPhoto", "Uploading photo...")}</span>
         </div>
       );
     }
@@ -239,20 +323,15 @@ export default function CheckInPage() {
     setIsSubmitting(true);
 
     try {
-      if (!selfie[0]) {
+      if (!selfieUpload.key) {
         toast.error(t("checkIn.selfieDescription"));
         setIsSubmitting(false);
         return;
       }
 
-      const selfiePayload = selfie[0];
-      const MAX_SELFIE_STRING_LENGTH = 1_200_000;
-      if (selfiePayload.length > MAX_SELFIE_STRING_LENGTH) {
+      if (!odometerUpload.key) {
         toast.error(
-          t(
-            "checkIn.selfieTooLarge",
-            "Selfie is too large. Please retake the photo and try again."
-          )
+          t("checkIn.odometerImageRequired", "Odometer photo is required.")
         );
         setIsSubmitting(false);
         return;
@@ -310,9 +389,9 @@ export default function CheckInPage() {
       }
 
       const payload = {
-        selfie: selfiePayload,
+        selfieKey: selfieUpload.key,
         start_odometer: odometer ? Number.parseFloat(odometer) : undefined,
-        start_odometer_image: odometerImage[0],
+        startOdometerImageKey: odometerUpload.key,
         materials: selectedMaterials,
         metadata,
       };
@@ -324,6 +403,7 @@ export default function CheckInPage() {
         return;
       }
 
+      clearCheckInDraft(dateKey);
       toast.success(t("checkIn.checkInSuccess"));
       router.push("/");
     } catch (error) {
@@ -376,21 +456,40 @@ export default function CheckInPage() {
                 </p>
               </div>
 
-              <ImageUploader
-                images={selfie}
-                onImagesChange={setSelfie}
-                minImages={1}
-                maxImages={1}
-                cameraOnly={true}
-                compress={{
-                  maxWidth: 960,
-                  maxHeight: 960,
-                  quality: 0.72,
-                  mimeType: "image/jpeg",
-                }}
-                label="Capture Selfie"
-                onImageCaptured={handleSelfieCaptured}
-              />
+              {selfieUpload.isRestoredWithoutPreview ? (
+                <AlreadyCapturedCard
+                  label={t("checkIn.selfieAlreadyCaptured", "Selfie already captured")}
+                  onRetake={() => {
+                    selfieUpload.reset();
+                    setSelfieMeta(null);
+                  }}
+                />
+              ) : (
+                <ImageUploader
+                  images={selfieUpload.images}
+                  onImagesChange={handleSelfieImagesChange}
+                  minImages={1}
+                  maxImages={1}
+                  cameraOnly={true}
+                  compress={{
+                    maxWidth: 960,
+                    maxHeight: 960,
+                    quality: 0.72,
+                    mimeType: "image/jpeg",
+                  }}
+                  label="Capture Selfie"
+                  onImageCaptured={handleSelfieCaptured}
+                />
+              )}
+
+              {selfieUpload.status === "error" && (
+                <div className="mt-4 flex items-center justify-between rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+                  <span>{t("checkIn.uploadFailed", "Upload failed.")}</span>
+                  <Button variant="ghost" size="sm" onClick={selfieUpload.retry}>
+                    {t("common.retry", "Retry")}
+                  </Button>
+                </div>
+              )}
 
               {isFetchingLocation && (
                 <div className="mt-4 flex items-center justify-center text-sm text-muted-foreground">
@@ -465,20 +564,36 @@ export default function CheckInPage() {
               <div className="space-y-4">
                 {/* Image first, then number input */}
                 <div className="space-y-2">
-                  <ImageUploader
-                    images={odometerImage}
-                    onImagesChange={setOdometerImage}
-                    minImages={1}
-                    maxImages={1}
-                    cameraOnly={true}
-                    compress={{
-                      maxWidth: 960,
-                      maxHeight: 960,
-                      quality: 0.72,
-                      mimeType: "image/jpeg",
-                    }}
-                    label="Capture Odometer Reading"
-                  />
+                  {odometerUpload.isRestoredWithoutPreview ? (
+                    <AlreadyCapturedCard
+                      label={t("checkIn.odometerAlreadyCaptured", "Odometer photo already captured")}
+                      onRetake={odometerUpload.reset}
+                    />
+                  ) : (
+                    <ImageUploader
+                      images={odometerUpload.images}
+                      onImagesChange={odometerUpload.onImagesChange}
+                      minImages={1}
+                      maxImages={1}
+                      cameraOnly={true}
+                      compress={{
+                        maxWidth: 960,
+                        maxHeight: 960,
+                        quality: 0.72,
+                        mimeType: "image/jpeg",
+                      }}
+                      label="Capture Odometer Reading"
+                      onImageCaptured={odometerUpload.onImageCaptured}
+                    />
+                  )}
+                  {odometerUpload.status === "error" && (
+                    <div className="flex items-center justify-between rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+                      <span>{t("checkIn.uploadFailed", "Upload failed.")}</span>
+                      <Button variant="ghost" size="sm" onClick={odometerUpload.retry}>
+                        {t("common.retry", "Retry")}
+                      </Button>
+                    </div>
+                  )}
                 </div>
 
                 <hr className="border-border" />

@@ -25,7 +25,7 @@ import type {
   Job,
 } from "@/types/captain";
 import type { ServerActionResponse } from "@/types/generic";
-import { ACCEPTED_IMAGE_MIMES } from "@/shared/utils/images";
+import type { UploadUrlPayload } from "@/lib/directUpload";
 
 type CaptainMaterialApi = {
   id: number;
@@ -191,7 +191,6 @@ const MATERIAL_UNITS: readonly CaptainMaterialUnit[] = [
 const MATERIAL_UNIT_SET = new Set<string>(MATERIAL_UNITS);
 const SHIFT_STATUSES = new Set(["pending", "checked_in", "checked_out"]);
 
-const DEFAULT_SELFIE_FILENAME = "captain-selfie.jpg";
 const DEFAULT_JOB_PAGE_SIZE = 100;
 const DEFAULT_ESTIMATED_DURATION = 60;
 const DEFAULT_SERVICE_ICON = "";
@@ -506,38 +505,37 @@ function transformJobExecution(api: JobExecutionApi): CaptainJobExecution {
 
 
 
-function decodeBase64Image(base64Data: string, filename = DEFAULT_SELFIE_FILENAME): File | null {
-  if (!base64Data) {
-    return null;
-  }
-
-  const match = base64Data.match(/^data:([^;]+);base64,(.+)$/);
-  if (!match) {
-    return null;
-  }
-
-  const mime = match[1];
-  const payload = match[2];
-  if (!mime || !payload || !ACCEPTED_IMAGE_MIMES.includes(mime)) {
-    return null;
-  }
-
-  const byteArray = Uint8Array.from(Buffer.from(payload, "base64"));
-  const extension = mime.split("/")[1] || "jpg";
-  const filenameWithExtension = `${Date.now()}-${filename.replace(
-    /\.\w+$/,
-    `.${extension}`
-  )}`;
-  return new File([byteArray], filenameWithExtension, { type: mime });
+export async function getCheckInUploadUrl(
+  purpose: "selfie" | "start_odometer_image",
+  contentType: string
+): Promise<ServerActionResponse<UploadUrlPayload>> {
+  return fetchWithSession<Record<string, unknown>, UploadUrlPayload>(
+    apiPost,
+    "/api/service/captain/shifts/check-in/upload-url/",
+    { purpose, content_type: contentType }
+  );
 }
 
-function appendBase64Images(formData: FormData, fieldName: string, images: string[]) {
-  images.forEach((image, index) => {
-    const file = decodeBase64Image(image, `${fieldName}-${index + 1}.jpg`);
-    if (file) {
-      formData.append(fieldName, file);
-    }
-  });
+export async function getCheckOutUploadUrl(
+  contentType: string
+): Promise<ServerActionResponse<UploadUrlPayload>> {
+  return fetchWithSession<Record<string, unknown>, UploadUrlPayload>(
+    apiPost,
+    "/api/service/captain/shifts/check-out/upload-url/",
+    { purpose: "end_odometer_image", content_type: contentType }
+  );
+}
+
+export async function getExecutionUploadUrl(
+  bookingId: string,
+  purpose: "before" | "after",
+  contentType: string
+): Promise<ServerActionResponse<UploadUrlPayload>> {
+  return fetchWithSession<Record<string, unknown>, UploadUrlPayload>(
+    apiPost,
+    `/api/service/captain/bookings/${bookingId}/execution/upload-url/`,
+    { purpose, content_type: contentType }
+  );
 }
 
 export async function getCaptainMaterials(
@@ -609,7 +607,7 @@ export async function getCaptainShiftSummary(params?: {
 export async function submitCaptainCheckIn(
   payload: CaptainCheckInRequest
 ): Promise<ServerActionResponse<CaptainShiftLog>> {
-  if (!payload.selfie) {
+  if (!payload.selfieKey) {
     return createErrorResponse<CaptainShiftLog>(
       "Selfie capture is required",
       "CHECK_IN_SELFIE_REQUIRED",
@@ -625,7 +623,7 @@ export async function submitCaptainCheckIn(
     );
   }
 
-  if (!payload.start_odometer_image) {
+  if (!payload.startOdometerImageKey) {
     return createErrorResponse<CaptainShiftLog>(
       "Odometer photo is required. Please capture an image of your odometer reading.",
       "CHECK_IN_ODOMETER_IMAGE_REQUIRED",
@@ -641,50 +639,25 @@ export async function submitCaptainCheckIn(
     );
   }
 
-  const selfieFile = decodeBase64Image(payload.selfie);
-  if (!selfieFile) {
-    return createErrorResponse<CaptainShiftLog>(
-      "Invalid selfie data. Please capture again.",
-      "CHECK_IN_SELFIE_INVALID",
-      null
-    );
-  }
-
-  const odometerImageFile = decodeBase64Image(
-    payload.start_odometer_image,
-    "odometer.jpg"
-  );
-  if (!odometerImageFile) {
-    return createErrorResponse<CaptainShiftLog>(
-      "Invalid odometer photo data. Please capture again.",
-      "CHECK_IN_ODOMETER_IMAGE_INVALID",
-      null
-    );
-  }
-
-  const formData = new FormData();
-  formData.append("selfie", selfieFile);
-  formData.append("start_odometer_image", odometerImageFile);
+  const body: Record<string, unknown> = {
+    selfie_key: payload.selfieKey,
+    start_odometer_image_key: payload.startOdometerImageKey,
+    materials: payload.materials,
+    metadata: payload.metadata,
+  };
 
   if (payload.start_odometer !== undefined && payload.start_odometer !== null) {
-    formData.append("start_odometer", String(payload.start_odometer));
-  }
-
-  // Send materials as JSON string for multipart/form-data compatibility
-  formData.append("materials", JSON.stringify(payload.materials));
-
-  if (payload.metadata && Object.keys(payload.metadata).length > 0) {
-    formData.append("metadata", JSON.stringify(payload.metadata));
+    body.start_odometer = payload.start_odometer;
   }
 
   if (payload.shiftDate) {
-    formData.append("shift_date", payload.shiftDate);
+    body.shift_date = payload.shiftDate;
   }
 
-  const result = await fetchWithSession<FormData, CaptainShiftLogApi>(
+  const result = await fetchWithSession<Record<string, unknown>, CaptainShiftLogApi>(
     apiPost,
     "/api/service/captain/shifts/check-in/",
-    formData
+    body
   );
 
   if (!result.success || !result.data) {
@@ -706,7 +679,7 @@ export async function submitCaptainCheckIn(
 export async function submitCaptainCheckOut(
   payload: CaptainCheckOutRequest
 ): Promise<ServerActionResponse<CaptainShiftLog>> {
-  if (!payload.endOdometerImage) {
+  if (!payload.endOdometerImageKey) {
     return createErrorResponse<CaptainShiftLog>(
       "Odometer photo is required. Please capture an image of your closing odometer reading.",
       "CHECK_OUT_ODOMETER_IMAGE_REQUIRED",
@@ -722,38 +695,27 @@ export async function submitCaptainCheckOut(
     );
   }
 
-  const odometerImageFile = decodeBase64Image(
-    payload.endOdometerImage,
-    "odometer.jpg"
-  );
-  if (!odometerImageFile) {
-    return createErrorResponse<CaptainShiftLog>(
-      "Invalid odometer photo data. Please capture again.",
-      "CHECK_OUT_ODOMETER_IMAGE_INVALID",
-      null
-    );
-  }
-
-  const formData = new FormData();
-  formData.append("end_odometer", String(payload.endOdometer));
-  formData.append("end_odometer_image", odometerImageFile);
+  const body: Record<string, unknown> = {
+    end_odometer: payload.endOdometer,
+    end_odometer_image_key: payload.endOdometerImageKey,
+  };
 
   if (payload.notes) {
-    formData.append("notes", payload.notes);
+    body.notes = payload.notes;
   }
 
   if (payload.metadata) {
-    formData.append("metadata", JSON.stringify(payload.metadata));
+    body.metadata = payload.metadata;
   }
 
   if (payload.shiftDate) {
-    formData.append("shift_date", payload.shiftDate);
+    body.shift_date = payload.shiftDate;
   }
 
-  const result = await fetchWithSession<FormData, CaptainShiftLogApi>(
+  const result = await fetchWithSession<Record<string, unknown>, CaptainShiftLogApi>(
     apiPost,
     "/api/service/captain/shifts/check-out/",
-    formData
+    body
   );
 
   if (!result.success || !result.data) {
@@ -871,41 +833,38 @@ export async function completeCaptainJobExecution(
   bookingId: string,
   payload: CaptainJobExecutionCompleteRequest
 ): Promise<ServerActionResponse<CaptainJobExecution>> {
-  const formData = new FormData();
-  appendBase64Images(formData, 'before_images', payload.beforeImages);
-  appendBase64Images(formData, 'after_images', payload.afterImages);
+  const body: Record<string, unknown> = {
+    before_image_keys: payload.beforeImageKeys,
+    after_image_keys: payload.afterImageKeys,
+    checklist: payload.checklist,
+    captain_rating_for_customer: payload.captainRatingForCustomer,
+  };
 
   // Tell the backend which already-uploaded gallery rows to keep so they are
   // not deleted and re-uploaded unnecessarily on resume.
   if (payload.existingBeforeImageIds && payload.existingBeforeImageIds.length > 0) {
-    formData.append('existing_before_image_ids', JSON.stringify(payload.existingBeforeImageIds));
+    body.existing_before_image_ids = payload.existingBeforeImageIds;
   }
   if (payload.existingAfterImageIds && payload.existingAfterImageIds.length > 0) {
-    formData.append('existing_after_image_ids', JSON.stringify(payload.existingAfterImageIds));
+    body.existing_after_image_ids = payload.existingAfterImageIds;
   }
 
-  formData.append('checklist', JSON.stringify(payload.checklist));
-  formData.append(
-    'captain_rating_for_customer',
-    String(payload.captainRatingForCustomer)
-  );
-
   if (payload.captainNotes) {
-    formData.append('captain_notes', payload.captainNotes);
+    body.captain_notes = payload.captainNotes;
   }
 
   if (payload.summary) {
-    formData.append('summary', JSON.stringify(payload.summary));
+    body.summary = payload.summary;
   }
 
   if (payload.metadata) {
-    formData.append('metadata', JSON.stringify(payload.metadata));
+    body.metadata = payload.metadata;
   }
 
-  const result = await fetchWithSession<FormData, JobExecutionApi>(
+  const result = await fetchWithSession<Record<string, unknown>, JobExecutionApi>(
     apiPost,
     `/api/service/captain/bookings/${bookingId}/complete/`,
-    formData
+    body
   );
 
   if (!result.success || !result.data) {
@@ -952,37 +911,37 @@ export async function saveJobExecutionProgress(
   bookingId: string,
   payload: CaptainJobExecutionSaveProgressRequest
 ): Promise<ServerActionResponse<CaptainJobExecution>> {
-  const formData = new FormData();
+  const body: Record<string, unknown> = {};
 
-  if (payload.beforeImages && payload.beforeImages.length > 0) {
-    appendBase64Images(formData, 'before_images', payload.beforeImages);
+  if (payload.beforeImageKeys && payload.beforeImageKeys.length > 0) {
+    body.before_image_keys = payload.beforeImageKeys;
   }
-  if (payload.afterImages && payload.afterImages.length > 0) {
-    appendBase64Images(formData, 'after_images', payload.afterImages);
+  if (payload.afterImageKeys && payload.afterImageKeys.length > 0) {
+    body.after_image_keys = payload.afterImageKeys;
   }
   if (payload.existingBeforeImageIds && payload.existingBeforeImageIds.length > 0) {
-    formData.append('existing_before_image_ids', JSON.stringify(payload.existingBeforeImageIds));
+    body.existing_before_image_ids = payload.existingBeforeImageIds;
   }
   if (payload.existingAfterImageIds && payload.existingAfterImageIds.length > 0) {
-    formData.append('existing_after_image_ids', JSON.stringify(payload.existingAfterImageIds));
+    body.existing_after_image_ids = payload.existingAfterImageIds;
   }
   if (payload.checklist) {
-    formData.append('checklist', JSON.stringify(payload.checklist));
+    body.checklist = payload.checklist;
   }
   if (payload.captainNotes !== undefined) {
-    formData.append('captain_notes', payload.captainNotes);
+    body.captain_notes = payload.captainNotes;
   }
   if (payload.captainRatingForCustomer !== undefined) {
-    formData.append('captain_rating_for_customer', String(payload.captainRatingForCustomer));
+    body.captain_rating_for_customer = payload.captainRatingForCustomer;
   }
   if (payload.currentStep !== undefined) {
-    formData.append('current_step', String(payload.currentStep));
+    body.current_step = payload.currentStep;
   }
 
-  const result = await fetchWithSession<FormData, JobExecutionApi>(
+  const result = await fetchWithSession<Record<string, unknown>, JobExecutionApi>(
     apiPatch,
     `/api/service/captain/bookings/${bookingId}/execution/`,
-    formData
+    body
   );
 
   if (!result.success || !result.data) {
