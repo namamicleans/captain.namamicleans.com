@@ -20,6 +20,18 @@ import { useEffect, useRef } from "react";
  * The fix is the standard companion to skipWaiting: reload once the new
  * service worker actually takes control, so the tab is never left running
  * a stale module graph against fresh assets.
+ *
+ * `controllerchange` alone only fires for a tab that's actively around
+ * (foregrounded, network-connected) when the browser gets around to
+ * checking for an update — which it does on its own schedule, not
+ * instantly. A captain's installed PWA left backgrounded/dormant across a
+ * deploy won't have run that check by the time they reopen it hours
+ * later, so it can resume with the same stale-module-graph problem before
+ * `controllerchange` ever fires. Closing that gap: proactively ask the
+ * registration to check for an update whenever the app becomes visible or
+ * focused again (and once on mount) — if a new worker is actually out
+ * there, `skipWaiting` takes it live and `controllerchange` below fires
+ * and reloads, same as the already-open-tab case.
  */
 export function ServiceWorkerUpdateReload() {
   const reloading = useRef(false);
@@ -33,9 +45,30 @@ export function ServiceWorkerUpdateReload() {
       window.location.reload();
     };
 
+    const checkForUpdate = () => {
+      navigator.serviceWorker.getRegistration().then((registration) => {
+        registration?.update().catch(() => {
+          // Offline or a transient network hiccup — the next visibility/focus
+          // trigger will simply retry, nothing to surface here.
+        });
+      });
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        checkForUpdate();
+      }
+    };
+
     navigator.serviceWorker.addEventListener("controllerchange", handleControllerChange);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", checkForUpdate);
+    checkForUpdate();
+
     return () => {
       navigator.serviceWorker.removeEventListener("controllerchange", handleControllerChange);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", checkForUpdate);
     };
   }, []);
 
