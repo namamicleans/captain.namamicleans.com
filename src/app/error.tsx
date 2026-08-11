@@ -5,6 +5,7 @@ import { TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { reportError } from "@/lib/errorReporting";
+import { reloadOnceIfStaleModuleGraph } from "@/lib/staleModuleGraph";
 
 export default function RootError({
   error,
@@ -22,6 +23,10 @@ export default function RootError({
       url: typeof window !== "undefined" ? window.location.href : undefined,
       component: "app/error.tsx",
     });
+
+    // `reset()` just re-renders the existing tree and hits the exact same
+    // stale module again — only a full reload actually recovers.
+    reloadOnceIfStaleModuleGraph(error?.message);
   }, [error]);
 
   const handleReset = () => {

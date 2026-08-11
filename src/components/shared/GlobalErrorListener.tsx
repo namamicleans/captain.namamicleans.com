@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { reportError, flushQueuedErrors } from "@/lib/errorReporting";
+import { reloadOnceIfStaleModuleGraph } from "@/lib/staleModuleGraph";
 
 /**
  * Catches errors React's error boundaries can't — uncaught exceptions in
@@ -13,24 +14,28 @@ export function GlobalErrorListener() {
     flushQueuedErrors();
 
     const handleError = (event: ErrorEvent) => {
+      const message = event.message || String(event.error);
       reportError({
         error_type: event.error?.name || "Error",
-        message: event.message || String(event.error),
+        message,
         stack: event.error?.stack,
         url: window.location.href,
         component: "window.onerror",
       });
+      reloadOnceIfStaleModuleGraph(message);
     };
 
     const handleRejection = (event: PromiseRejectionEvent) => {
       const reason = event.reason;
+      const message = reason?.message || String(reason);
       reportError({
         error_type: reason?.name || "UnhandledRejection",
-        message: reason?.message || String(reason),
+        message,
         stack: reason?.stack,
         url: window.location.href,
         component: "unhandledrejection",
       });
+      reloadOnceIfStaleModuleGraph(message);
     };
 
     window.addEventListener("error", handleError);
