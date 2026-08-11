@@ -60,15 +60,24 @@ export function ServiceWorkerUpdateReload() {
       }
     };
 
+    // iOS standalone PWAs are the gap `visibilitychange`/`focus` don't
+    // reliably cover: the OS can suspend and later resume the webview
+    // without firing either. `pageshow` does fire on that resume — with
+    // `event.persisted` true when it's a bfcache restore of the exact
+    // stale module graph this listener exists to catch.
+    const handlePageShow = () => checkForUpdate();
+
     navigator.serviceWorker.addEventListener("controllerchange", handleControllerChange);
     document.addEventListener("visibilitychange", handleVisibilityChange);
     window.addEventListener("focus", checkForUpdate);
+    window.addEventListener("pageshow", handlePageShow);
     checkForUpdate();
 
     return () => {
       navigator.serviceWorker.removeEventListener("controllerchange", handleControllerChange);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("focus", checkForUpdate);
+      window.removeEventListener("pageshow", handlePageShow);
     };
   }, []);
 
