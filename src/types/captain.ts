@@ -212,15 +212,6 @@ export interface Job {
   selectedAddons?: JobSelectedAddon[];
 }
 
-export interface Earnings {
-  today: number;
-  thisWeek: number;
-  thisMonth: number;
-  totalJobs: number;
-  incentives: number;
-  deductions: number;
-}
-
 export interface CaptainLeaveRequest {
   id: number;
   request_code: string;
