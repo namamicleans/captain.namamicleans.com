@@ -29,7 +29,6 @@ import type {
   CaptainTimesheet,
   CaptainTimesheetFilters,
   CaptainShiftSummary,
-  Earnings,
   Job,
 } from "@/types/captain";
 import type { ServerActionResponse } from "@/types/generic";
@@ -108,7 +107,9 @@ interface CaptainContextType {
   isCheckOutInFlight: boolean;
   jobs: Job[];
   activeJob: Job | null;
-  earnings: Earnings;
+  fetchJobs: (
+    params?: CaptainJobFilters
+  ) => Promise<ServerActionResponse<Job[]>>;
   checkIn: (
     payload: CaptainCheckInRequest
   ) => Promise<ServerActionResponse<CaptainShiftLog>>;
@@ -175,15 +176,6 @@ const buildCaptainProfile = (user: UserResponse["user"]): Captain => ({
   joinedDate: "",
 });
 
-const mockEarnings: Earnings = {
-  today: 1898,
-  thisWeek: 12450,
-  thisMonth: 48750,
-  totalJobs: 28,
-  incentives: 2500,
-  deductions: 350,
-};
-
 const CaptainContext = createContext<CaptainContextType | undefined>(undefined);
 
 export function CaptainProvider({
@@ -203,7 +195,6 @@ export function CaptainProvider({
   
   const [jobs, setJobs] = useState<Job[]>([]);
   const [activeJob, setActiveJob] = useState<Job | null>(null);
-  const [earnings] = useState<Earnings>(mockEarnings);
 
   const queryClient = useQueryClient();
 
@@ -380,6 +371,11 @@ export function CaptainProvider({
     setActiveJob(null);
   }, [updateJob]);
 
+  const fetchJobs = useCallback(
+    async (params?: CaptainJobFilters) => actions.fetchJobs(params),
+    [actions]
+  );
+
   const fetchLeaveBalance = useCallback(
     async () => actions.fetchLeaveBalance(),
     [actions]
@@ -436,7 +432,7 @@ export function CaptainProvider({
       isCheckOutInFlight: checkOutMutation.isPending,
       jobs,
       activeJob,
-      earnings,
+      fetchJobs,
       checkIn,
       checkOut,
       getCheckInUploadUrl,
@@ -469,7 +465,7 @@ export function CaptainProvider({
       checkOutMutation.isPending,
       jobs,
       activeJob,
-      earnings,
+      fetchJobs,
       checkIn,
       checkOut,
       getCheckInUploadUrl,

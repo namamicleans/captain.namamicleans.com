@@ -1089,6 +1089,13 @@ export async function withdrawCaptainLeave(
   return result as ServerActionResponse<CaptainLeaveRequest>;
 }
 
+type CaptainTimesheetApi = {
+  start_date: string;
+  end_date: string;
+  shifts: CaptainShiftLogApi[];
+  leave_requests: CaptainTimesheet["leave_requests"];
+};
+
 export async function getCaptainTimesheet(
   filters: CaptainTimesheetFilters = {}
 ): Promise<ServerActionResponse<CaptainTimesheet>> {
@@ -1103,7 +1110,13 @@ export async function getCaptainTimesheet(
   const endpoint = `/api/service/captain/timesheet/${
     search.toString() ? `?${search.toString()}` : ""
   }`;
-  const result = await fetchWithSession<undefined, CaptainTimesheet>(
+  // The endpoint returns raw snake_case fields (shift_date, checkin_time,
+  // status, ...) — transformShiftLog is what every other shift-returning
+  // call in this file already applies. This one was casting the
+  // untransformed API shape as CaptainTimesheet directly, so
+  // shift.shiftDate/.checkInTime/.status were always undefined and every
+  // day fell through to "no show" regardless of real attendance.
+  const result = await fetchWithSession<undefined, CaptainTimesheetApi>(
     apiGet,
     endpoint
   );
@@ -1118,7 +1131,15 @@ export async function getCaptainTimesheet(
     } as ServerActionResponse<CaptainTimesheet>;
   }
 
-  return result as ServerActionResponse<CaptainTimesheet>;
+  return {
+    ...result,
+    data: {
+      start_date: result.data.start_date,
+      end_date: result.data.end_date,
+      shifts: result.data.shifts.map(transformShiftLog),
+      leave_requests: result.data.leave_requests,
+    },
+  } as ServerActionResponse<CaptainTimesheet>;
 }
 
 export async function getCaptainPayslips(): Promise<
