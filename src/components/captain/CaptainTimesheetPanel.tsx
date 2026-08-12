@@ -177,6 +177,13 @@ function buildLeaveByDateMap(
   const leaveByDate = new Map<string, CaptainTimesheet["leave_requests"][number]>();
 
   for (const leave of leaves) {
+    // Matches the backend's rule (get_monthly_attendance filters on
+    // StatusChoices.APPROVED): a pending/rejected/withdrawn request was
+    // never actually leave, so it must not paint the calendar day.
+    if (leave.status !== "approved") {
+      continue;
+    }
+
     const leaveStart = parseDateOnly(leave.start_date);
     const leaveEnd = parseDateOnly(leave.end_date);
     if (!leaveStart || !leaveEnd || leaveStart.getTime() > leaveEnd.getTime()) {
@@ -218,25 +225,17 @@ function buildWorkedOrNoShowDayItem(
   shift: CaptainTimesheet["shifts"][number] | undefined,
   t: TranslateFn
 ): DayStatusItem | null {
-  if (!shift) {
-    // No shift at all for this date
-    if (isDateInPast(date)) {
-      return {
-        kind: "noShow",
-        badgeLabel: t("leaves.timesheet.labels.noShow"),
-      };
-    }
-    // Today/future dates with no shift remain blank
-    return null;
-  }
-
-  const checkInMinutes = parseTimeToMinutes(shift.checkInTime ?? null);
-
-  // If we have a valid check-in time, the captain was present this day
-  if (checkInMinutes !== null) {
+  // Matches the backend's own rule (get_monthly_attendance): a day counts
+  // as worked based on the shift's `status`, not on whether checkInTime
+  // happens to parse as a time string — the status field is the source
+  // of truth and is always set correctly even if a time field is
+  // malformed/differently-formatted, so deriving "worked" from parsing
+  // could disagree with what admin shows for the same day.
+  if (shift && (shift.status === "checked_in" || shift.status === "checked_out")) {
+    const checkInMinutes = parseTimeToMinutes(shift.checkInTime ?? null);
     const checkOutMinutes = parseTimeToMinutes(shift.checkOutTime ?? null);
 
-    if (checkOutMinutes !== null && checkOutMinutes > checkInMinutes) {
+    if (checkInMinutes !== null && checkOutMinutes !== null && checkOutMinutes > checkInMinutes) {
       // Full shift with both check-in and check-out — show hour band
       const workedHours = (checkOutMinutes - checkInMinutes) / 60;
       const hourBandKey = getHourBandKey(workedHours);
@@ -246,14 +245,16 @@ function buildWorkedOrNoShowDayItem(
       };
     }
 
-    // Checked in but no valid check-out — still present, use generic label
+    // Checked in but no valid check-out (or times didn't parse) — still
+    // present per status, use the generic label.
     return {
       kind: "worked",
       badgeLabel: t("leaves.timesheet.labels.worked"),
     };
   }
 
-  // Shift record exists but no valid check-in time — treat as no-show for past dates
+  // No shift, or a shift stuck at "pending" (started but never checked
+  // in) — treat as no-show for past dates.
   if (isDateInPast(date)) {
     return {
       kind: "noShow",
@@ -261,6 +262,7 @@ function buildWorkedOrNoShowDayItem(
     };
   }
 
+  // Today/future dates with no confirmed shift remain blank.
   return null;
 }
 
@@ -286,13 +288,23 @@ function buildTimelineRows(
   );
 
   for (const date of allDates) {
+    // Matches the backend's priority (get_monthly_attendance): actually
+    // having worked the day outranks an approved leave record for it —
+    // e.g. leave was approved but the captain ended up checking in
+    // anyway. Only fall back to leave, then no-show/blank, once "worked"
+    // is ruled out.
+    const dayItem = buildWorkedOrNoShowDayItem(date, shiftByDate.get(date), t);
+    if (dayItem?.kind === "worked") {
+      rows.set(date, dayItem);
+      continue;
+    }
+
     const leave = leaveByDate.get(date);
     if (leave) {
       rows.set(date, buildLeaveDayItem(date, leave, t));
       continue;
     }
 
-    const dayItem = buildWorkedOrNoShowDayItem(date, shiftByDate.get(date), t);
     if (dayItem) {  // Only add if not null
       rows.set(date, dayItem);
     }
