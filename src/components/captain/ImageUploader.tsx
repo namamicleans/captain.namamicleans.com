@@ -24,6 +24,16 @@ interface ImageUploaderProps {
   compress?: ImageCompressionOptions;
   onImageCaptured?: (payload: { dataUrl: string; capturedAt: string }) => void;
   maxFileSizeMB?: number;
+  /**
+   * Whether GPS coordinates are actually captured and attached to the
+   * photo(s) taken in this uploader instance. Only the check-in selfie
+   * captures location today (via getCurrentLocation() in check-in/page.tsx).
+   * Odometer photos and job-execution photos never call any geolocation
+   * API, so this must stay false/omitted for those callers — otherwise the
+   * "GPS ✓" badge misleadingly implies location was recorded for photos
+   * that have none.
+   */
+  hasGps?: boolean;
 }
 
 async function readFileAsDataUrl(file: Blob): Promise<string> {
@@ -96,6 +106,7 @@ export function ImageUploader({
   compress,
   onImageCaptured,
   maxFileSizeMB,
+  hasGps = false,
 }: ImageUploaderProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isCapturing, setIsCapturing] = useState(false);
@@ -183,9 +194,11 @@ export function ImageUploader({
             >
               <X className="h-3 w-3 text-destructive-foreground" />
             </button>
-            <div className="absolute bottom-1 left-1 bg-background/80 text-xs px-1.5 py-0.5 rounded">
-              GPS ✓
-            </div>
+            {hasGps && (
+              <div className="absolute bottom-1 left-1 bg-background/80 text-xs px-1.5 py-0.5 rounded">
+                GPS ✓
+              </div>
+            )}
           </div>
         ))}
         
