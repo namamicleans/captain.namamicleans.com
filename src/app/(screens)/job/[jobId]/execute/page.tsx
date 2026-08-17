@@ -62,6 +62,8 @@ export default function JobExecutionPage() {
     saveJobExecutionProgress,
     getJobExecution,
     getExecutionUploadUrl,
+    isCurrentlyCheckedIn,
+    isShiftLoading,
   } = useCaptain();
 
   const job = jobs.find(j => j.id === jobId);
@@ -104,6 +106,21 @@ export default function JobExecutionPage() {
   const [isExecutionLoading, setIsExecutionLoading] = useState(true);
   const [executionLoadError, setExecutionLoadError] = useState<string | null>(null);
   const hasPrefilledExecution = useRef<string | null>(null);
+  const [guardReady, setGuardReady] = useState(false);
+
+  // Guard against reaching this screen without checking in first — reachable
+  // via direct URL/deep link/browser history, which would otherwise let a
+  // captain start/complete a job without an active shift.
+  useEffect(() => {
+    if (isShiftLoading) return;
+
+    if (!isCurrentlyCheckedIn) {
+      toast.error('Check in before starting a job');
+      router.replace('/');
+    } else {
+      setGuardReady(true);
+    }
+  }, [isCurrentlyCheckedIn, isShiftLoading, router]);
 
   // ── Draft persistence ─────────────────────────────────────────────────────
   const savedDraft = useExecutionDraft({
@@ -248,6 +265,10 @@ export default function JobExecutionPage() {
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [job?.id]);
+
+  if (!guardReady) {
+    return null;
+  }
 
   if (!job) {
     return (
