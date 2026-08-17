@@ -60,7 +60,7 @@ function AlreadyCapturedCard({ label, onRetake }: { label: string; onRetake: () 
 
 export default function CheckInPage() {
   const router = useRouter();
-  const { checkIn, materials, isShiftLoading, todayAttendance, getCheckInUploadUrl } =
+  const { checkIn, materials, isShiftLoading, isCurrentlyCheckedIn, todayAttendance, getCheckInUploadUrl } =
     useCaptain();
   const { t } = useTranslation();
   const { permissions, requestLocationPermission, getCurrentLocation } =
@@ -77,6 +77,20 @@ export default function CheckInPage() {
   >({});
   const [odometer, setOdometer] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [guardReady, setGuardReady] = useState(false);
+
+  // Guard against re-checking in while already checked in for an active
+  // shift — mirror image of check-out's guard against checking out twice.
+  useEffect(() => {
+    if (isShiftLoading) return;
+
+    if (isCurrentlyCheckedIn) {
+      toast.error("You are already checked in today");
+      router.replace("/");
+    } else {
+      setGuardReady(true);
+    }
+  }, [isCurrentlyCheckedIn, isShiftLoading, router]);
 
   const getSelfieUploadUrl = useCallback(
     (contentType: string) => getCheckInUploadUrl("selfie", contentType),
@@ -319,6 +333,10 @@ export default function CheckInPage() {
     return t("common.continue");
   };
 
+  if (!guardReady) {
+    return null;
+  }
+
   const handleSubmit = async () => {
     setIsSubmitting(true);
 
@@ -479,6 +497,7 @@ export default function CheckInPage() {
                   }}
                   label="Capture Selfie"
                   onImageCaptured={handleSelfieCaptured}
+                  hasGps={true}
                 />
               )}
 
