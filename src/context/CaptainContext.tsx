@@ -489,11 +489,23 @@ export function CaptainProvider({
     ]
   );
 
-  // If no user, just render children without context (e.g., on /login page)
-  if (!initialUser || !captain) {
-    return <>{children}</>;
-  }
-
+  // Always provide the context, even before initialUser resolves (or when
+  // it's genuinely null, e.g. an expired session) — contextValue already
+  // degrades gracefully (captain: {} as Captain, empty jobs, queries
+  // disabled via `enabled: !!initialUser`). The redirect-to-login effect
+  // above fires regardless of whether this wraps children or not, since
+  // it's a separate effect that doesn't depend on the Provider being
+  // present. Skipping the Provider here used to mean any child calling
+  // useCaptain() during that same render — e.g. app/(screens)/page.tsx on
+  // a PWA cold start with no session yet — threw "useCaptain must be used
+  // within a CaptainProvider" instead of just rendering the empty/loading
+  // state it already knows how to handle. This was misdiagnosed once
+  // already as a stale-module-graph deploy artifact (see
+  // ServiceWorkerUpdateReload.tsx / staleModuleGraph.ts) and given an
+  // auto-reload-once-per-session mitigation that couldn't fully close the
+  // gap — the error kept recurring for three weeks after that shipped
+  // (115 occurrences, error group #63) because the real cause was this
+  // unconditional early return, not a duplicate module instance.
   return (
     <CaptainContext.Provider value={contextValue}>
       {children}
