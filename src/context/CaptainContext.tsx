@@ -99,6 +99,7 @@ interface CaptainContextType {
   captain: Captain;
   todayAttendance: CaptainShiftLog | null;
   materials: CaptainMaterial[];
+  shiftPolicy: CaptainShiftSummary["shiftPolicy"];
   isCheckedIn: boolean;
   isCurrentlyCheckedIn: boolean;
   isCheckedOut: boolean;
@@ -261,6 +262,7 @@ export function CaptainProvider({
     () => shiftQuery.data?.materials ?? [],
     [shiftQuery.data?.materials]
   );
+  const shiftPolicy = shiftQuery.data?.shiftPolicy ?? null;
 
   const refreshShift = useCallback(async () => {
     await queryClient.invalidateQueries({ queryKey: shiftQueryKey });
@@ -422,6 +424,7 @@ export function CaptainProvider({
       captain: captain || ({} as Captain),
       todayAttendance,
       materials,
+      shiftPolicy,
       isCheckedIn: Boolean(
         todayAttendance && todayAttendance.status !== "pending"
       ),
@@ -459,6 +462,7 @@ export function CaptainProvider({
       captain,
       todayAttendance,
       materials,
+      shiftPolicy,
       shiftQuery.isPending,
       shiftQuery.isFetching,
       checkInMutation.isPending,

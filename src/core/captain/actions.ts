@@ -73,6 +73,7 @@ type CaptainShiftSummaryApi = {
   captain_label: string | null;
   shift: CaptainShiftLogApi | null;
   materials: CaptainMaterialApi[];
+  shift_policy?: CaptainShiftSummary["shiftPolicy"];
 };
 
 type BookingUserApi = {
@@ -277,6 +278,7 @@ function transformSummary(api: CaptainShiftSummaryApi): CaptainShiftSummary {
     captainLabel: api.captain_label,
     shift: api.shift ? transformShiftLog(api.shift) : null,
     materials: api.materials.map(transformMaterial),
+    shiftPolicy: api.shift_policy ?? null,
   };
 }
 
@@ -607,22 +609,6 @@ export async function getCaptainShiftSummary(params?: {
 export async function submitCaptainCheckIn(
   payload: CaptainCheckInRequest
 ): Promise<ServerActionResponse<CaptainShiftLog>> {
-  if (!payload.selfieKey) {
-    return createErrorResponse<CaptainShiftLog>(
-      "Selfie capture is required",
-      "CHECK_IN_SELFIE_REQUIRED",
-      null
-    );
-  }
-
-  if (!payload.materials || payload.materials.length === 0) {
-    return createErrorResponse<CaptainShiftLog>(
-      "Select at least one material before proceeding.",
-      "CHECK_IN_MATERIALS_REQUIRED",
-      null
-    );
-  }
-
   if (!payload.startOdometerImageKey) {
     return createErrorResponse<CaptainShiftLog>(
       "Odometer photo is required. Please capture an image of your odometer reading.",
@@ -631,24 +617,27 @@ export async function submitCaptainCheckIn(
     );
   }
 
-  if (!payload.metadata || Object.keys(payload.metadata).length === 0) {
+  if (!Number.isFinite(payload.start_odometer) || payload.start_odometer <= 0) {
     return createErrorResponse<CaptainShiftLog>(
-      "Selfie metadata missing. Retake the selfie to capture location.",
-      "CHECK_IN_METADATA_REQUIRED",
+      "Enter a valid odometer reading.",
+      "CHECK_IN_ODOMETER_INVALID",
       null
     );
   }
 
   const body: Record<string, unknown> = {
-    selfie_key: payload.selfieKey,
+    start_odometer: payload.start_odometer,
     start_odometer_image_key: payload.startOdometerImageKey,
-    materials: payload.materials,
-    metadata: payload.metadata,
   };
 
-  if (payload.start_odometer !== undefined && payload.start_odometer !== null) {
-    body.start_odometer = payload.start_odometer;
+  if (payload.qrCodes && payload.qrCodes.length > 0) {
+    body.qr_codes = payload.qrCodes;
   }
+  if (payload.metadata && Object.keys(payload.metadata).length > 0) {
+    body.metadata = payload.metadata;
+  }
+  if (payload.selfieKey) body.selfie_key = payload.selfieKey;
+  if (payload.materials && payload.materials.length > 0) body.materials = payload.materials;
 
   if (payload.shiftDate) {
     body.shift_date = payload.shiftDate;
@@ -702,6 +691,10 @@ export async function submitCaptainCheckOut(
 
   if (payload.notes) {
     body.notes = payload.notes;
+  }
+
+  if (payload.qrCodes && payload.qrCodes.length > 0) {
+    body.qr_codes = payload.qrCodes;
   }
 
   if (payload.metadata) {
