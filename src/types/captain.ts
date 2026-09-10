@@ -53,6 +53,7 @@ export interface CaptainShiftSummary {
   captainLabel: string | null;
   shift: CaptainShiftLog | null;
   materials: CaptainMaterial[];
+  shiftPolicy: CaptainShiftPolicy | null;
 }
 
 export interface CaptainCheckInMaterialInput {
@@ -62,14 +63,16 @@ export interface CaptainCheckInMaterialInput {
 }
 
 export interface CaptainCheckInRequest {
-  /** R2 object key for the already-uploaded selfie (see uploadImageDirect). */
-  selfieKey: string;
-  start_odometer?: number | null;
+  start_odometer: number;
   /** R2 object key for the already-uploaded odometer photo. */
-  startOdometerImageKey?: string;
-  materials: CaptainCheckInMaterialInput[];
-  metadata: Record<string, unknown>;
+  startOdometerImageKey: string;
+  /** Consecutive office-QR scans (see QrScanner). Empty until QR is enabled. */
+  qrCodes?: string[];
+  metadata?: Record<string, unknown>;
   shiftDate?: string;
+  // Legacy — an older captain app still sends these.
+  selfieKey?: string;
+  materials?: CaptainCheckInMaterialInput[];
 }
 
 export interface CaptainCheckOutRequest {
@@ -77,8 +80,20 @@ export interface CaptainCheckOutRequest {
   /** R2 object key for the already-uploaded odometer photo. */
   endOdometerImageKey: string;
   notes?: string;
+  qrCodes?: string[];
   metadata?: Record<string, unknown>;
   shiftDate?: string;
+}
+
+export interface CaptainShiftPolicy {
+  qr_checkin_enabled: boolean;
+  qr_window_seconds: number;
+  qr_required_scans: number;
+  checkin_window_enabled: boolean;
+  checkin_window_start: string;
+  checkin_window_end: string;
+  office_id: number | null;
+  office_name: string | null;
 }
 
 export interface Captain {

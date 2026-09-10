@@ -48,6 +48,18 @@ export const hi = {
     enterQuantity: 'मात्रा दर्ज करें',
     youreActive: 'आप सक्रिय हैं',
     onDuty: 'ड्यूटी पर',
+    alreadyCheckedIn: 'आप आज पहले ही चेक-इन कर चुके हैं',
+    odometerPhotoFirst: 'अपने शुरुआती ओडोमीटर की साफ़ फ़ोटो लें।',
+    enterReading: 'रीडिंग दर्ज करें',
+    uploadFailed: 'अपलोड विफल।',
+    qr: {
+      title: 'ऑफिस कोड स्कैन करें',
+      subtitle: '{{office}} की स्क्रीन पर अपना कैमरा रखें।',
+      holding: 'ऑफिस स्क्रीन पर स्थिर रखें… {{count}}/{{total}}',
+      wrongOffice: 'यह कोड आपके ऑफिस का नहीं है।',
+      cameraDenied: 'ऑफिस कोड स्कैन करने के लिए कैमरा एक्सेस दें।',
+      cameraError: 'कैमरा नहीं खुल सका।',
+    },
   },
   checkOut: {
     title: 'चेक आउट',
