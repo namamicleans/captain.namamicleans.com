@@ -14,7 +14,9 @@ import type { CaptainTimesheet } from "@/types/captain";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 
-type DayStatusType = "leave" | "worked" | "noShow";
+type DayStatusType = "leave" | "worked" | "halfDay" | "noShow";
+
+const DEFAULT_HALF_DAY_MIN_HOURS = 5;
 
 type DayStatusItem = {
   kind: DayStatusType;
@@ -223,7 +225,8 @@ function buildLeaveDayItem(
 function buildWorkedOrNoShowDayItem(
   date: string,
   shift: CaptainTimesheet["shifts"][number] | undefined,
-  t: TranslateFn
+  t: TranslateFn,
+  halfDayMinHours: number
 ): DayStatusItem | null {
   // Matches the backend's own rule (get_monthly_attendance): a day counts
   // as worked based on the shift's `status`, not on whether checkInTime
@@ -236,8 +239,14 @@ function buildWorkedOrNoShowDayItem(
     const checkOutMinutes = parseTimeToMinutes(shift.checkOutTime ?? null);
 
     if (checkInMinutes !== null && checkOutMinutes !== null && checkOutMinutes > checkInMinutes) {
-      // Full shift with both check-in and check-out — show hour band
+      // Full shift with both check-in and check-out.
       const workedHours = (checkOutMinutes - checkInMinutes) / 60;
+      if (workedHours < halfDayMinHours) {
+        return {
+          kind: "halfDay",
+          badgeLabel: t("leaves.timesheet.labels.halfDay"),
+        };
+      }
       const hourBandKey = getHourBandKey(workedHours);
       return {
         kind: "worked",
@@ -270,7 +279,8 @@ function buildTimelineRows(
   timesheet: CaptainTimesheet,
   startDate: string,
   endDate: string,
-  t: TranslateFn
+  t: TranslateFn,
+  halfDayMinHours: number
 ): Map<string, DayStatusItem> {
   const rows = new Map<string, DayStatusItem>();
   const dateRange = getDateRange(startDate, endDate);
@@ -293,8 +303,8 @@ function buildTimelineRows(
     // e.g. leave was approved but the captain ended up checking in
     // anyway. Only fall back to leave, then no-show/blank, once "worked"
     // is ruled out.
-    const dayItem = buildWorkedOrNoShowDayItem(date, shiftByDate.get(date), t);
-    if (dayItem?.kind === "worked") {
+    const dayItem = buildWorkedOrNoShowDayItem(date, shiftByDate.get(date), t, halfDayMinHours);
+    if (dayItem?.kind === "worked" || dayItem?.kind === "halfDay") {
       rows.set(date, dayItem);
       continue;
     }
@@ -343,6 +353,9 @@ export function CaptainTimesheetPanel() {
       }),
   });
 
+  const halfDayMinHours =
+    timesheetQuery.data?.data?.half_day_min_hours ?? DEFAULT_HALF_DAY_MIN_HOURS;
+
   const timelineByDate = useMemo(() => {
     const response = timesheetQuery.data;
     const timesheet = response?.data;
@@ -350,13 +363,45 @@ export function CaptainTimesheetPanel() {
       return new Map<string, DayStatusItem>();
     }
 
-    return buildTimelineRows(timesheet, timesheetStartDate, timesheetEndDate, t);
+    return buildTimelineRows(
+      timesheet,
+      timesheetStartDate,
+      timesheetEndDate,
+      t,
+      halfDayMinHours
+    );
   }, [
     timesheetEndDate,
     timesheetQuery.data,
     timesheetStartDate,
     t,
+    halfDayMinHours,
   ]);
+
+  // Per-month roll-up for the header (only counts days in the visible month).
+  const monthSummary = useMemo(() => {
+    const y = visibleMonth.getFullYear();
+    const m = visibleMonth.getMonth();
+    let worked = 0;
+    let half = 0;
+    let leave = 0;
+    let noShow = 0;
+    timelineByDate.forEach((item, dateStr) => {
+      const d = parseDateOnly(dateStr);
+      if (!d || d.getFullYear() !== y || d.getMonth() !== m) return;
+      if (item.kind === "worked") worked += 1;
+      else if (item.kind === "halfDay") half += 1;
+      else if (item.kind === "leave") leave += 1;
+      else if (item.kind === "noShow") noShow += 1;
+    });
+    return {
+      worked,
+      half,
+      leave,
+      noShow,
+      workingDays: worked + 0.5 * half + leave,
+    };
+  }, [timelineByDate, visibleMonth]);
 
   const calendarStatusByDate = useMemo<Record<string, AttendanceCalendarStatus>>(() => {
     const statusByDate: Record<string, AttendanceCalendarStatus> = {};
@@ -403,6 +448,25 @@ export function CaptainTimesheetPanel() {
           <CardTitle className="text-base">{t("leaves.timesheet.calendarTitle")}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
+          <div className="rounded-lg border bg-muted/40 px-3 py-2.5">
+            <div className="flex items-baseline justify-between">
+              <span className="text-sm text-muted-foreground">
+                {t("leaves.timesheet.summary.workingDays")}
+              </span>
+              <span className="text-xl font-semibold text-foreground">
+                {Number.isInteger(monthSummary.workingDays)
+                  ? monthSummary.workingDays
+                  : monthSummary.workingDays.toFixed(1)}
+              </span>
+            </div>
+            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+              <span>{t("leaves.timesheet.summary.worked")}: {monthSummary.worked}</span>
+              <span>{t("leaves.timesheet.summary.half")}: {monthSummary.half}</span>
+              <span>{t("leaves.timesheet.summary.leave")}: {monthSummary.leave}</span>
+              <span>{t("leaves.timesheet.summary.noShow")}: {monthSummary.noShow}</span>
+            </div>
+          </div>
+
           <AttendanceCalendar
             visibleMonth={visibleMonth}
             dayStatusByDate={calendarStatusByDate}
@@ -410,6 +474,7 @@ export function CaptainTimesheetPanel() {
             labels={{
               leave: t("leaves.timesheet.labels.leave"),
               worked: t("leaves.timesheet.labels.worked"),
+              halfDay: t("leaves.timesheet.labels.halfDay"),
               noShow: t("leaves.timesheet.labels.noShow"),
             }}
             disableFutureMonth

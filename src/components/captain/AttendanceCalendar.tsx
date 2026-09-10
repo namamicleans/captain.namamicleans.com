@@ -7,7 +7,7 @@ import { cn } from "@shared/utils";
 
 import { Button } from "@/components/ui/button";
 
-export type AttendanceCalendarStatus = "leave" | "worked" | "noShow";
+export type AttendanceCalendarStatus = "leave" | "worked" | "halfDay" | "noShow";
 
 type AttendanceCalendarProps = {
   visibleMonth: Date;
@@ -16,6 +16,7 @@ type AttendanceCalendarProps = {
   labels: {
     leave: string;
     worked: string;
+    halfDay: string;
     noShow: string;
   };
   disableFutureMonth?: boolean;
@@ -32,6 +33,7 @@ function toDateInputString(date: Date): string {
 const statusClasses: Record<AttendanceCalendarStatus, string> = {
   leave: "bg-primary/15 text-primary border-primary/30",
   worked: "bg-emerald-100 text-emerald-700 border-emerald-200",
+  halfDay: "bg-amber-100 text-amber-700 border-amber-200",
   noShow: "bg-destructive/10 text-destructive border-destructive/20",
 };
 
@@ -63,6 +65,7 @@ export function AttendanceCalendar({
   const counts = useMemo(() => {
     let leave = 0;
     let worked = 0;
+    let halfDay = 0;
     let noShow = 0;
 
     for (let day = 1; day <= daysInMonth; day += 1) {
@@ -73,12 +76,14 @@ export function AttendanceCalendar({
         leave += 1;
       } else if (status === "worked") {
         worked += 1;
+      } else if (status === "halfDay") {
+        halfDay += 1;
       } else if (status === "noShow") {
         noShow += 1;
       }
     }
 
-    return { leave, worked, noShow };
+    return { leave, worked, halfDay, noShow };
   }, [dayStatusByDate, daysInMonth, month, year]);
 
   const leadingEmptyCellKeys = useMemo(
@@ -165,6 +170,12 @@ export function AttendanceCalendar({
           <div className="h-3 w-3 rounded bg-emerald-100" />
           <span className="text-muted-foreground">
             {labels.worked} ({counts.worked})
+          </span>
+        </div>
+        <div className="flex items-center gap-1">
+          <div className="h-3 w-3 rounded bg-amber-100" />
+          <span className="text-muted-foreground">
+            {labels.halfDay} ({counts.halfDay})
           </span>
         </div>
         <div className="flex items-center gap-1">
