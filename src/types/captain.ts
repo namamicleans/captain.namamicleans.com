@@ -269,6 +269,8 @@ export interface CaptainTimesheet {
   end_date: string;
   shifts: CaptainShiftLog[];
   leave_requests: CaptainLeaveRequest[];
+  /** Worked hours below this count as a half day. Server-configurable. */
+  half_day_min_hours?: number;
 }
 
 export interface CaptainPayslipMiscItem {

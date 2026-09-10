@@ -1094,6 +1094,7 @@ type CaptainTimesheetApi = {
   end_date: string;
   shifts: CaptainShiftLogApi[];
   leave_requests: CaptainTimesheet["leave_requests"];
+  half_day_min_hours?: number;
 };
 
 export async function getCaptainTimesheet(
@@ -1138,6 +1139,7 @@ export async function getCaptainTimesheet(
       end_date: result.data.end_date,
       shifts: result.data.shifts.map(transformShiftLog),
       leave_requests: result.data.leave_requests,
+      half_day_min_hours: result.data.half_day_min_hours,
     },
   } as ServerActionResponse<CaptainTimesheet>;
 }

@@ -211,6 +211,14 @@ export const hi = {
       labels: {
         leave: 'छुट्टी',
         worked: 'कार्य किया',
+        halfDay: 'आधा दिन',
+        noShow: 'अनुपस्थित',
+      },
+      summary: {
+        workingDays: 'कार्य दिवस',
+        worked: 'कार्य',
+        half: 'आधा',
+        leave: 'छुट्टी',
         noShow: 'अनुपस्थित',
       },
       hourBands: {

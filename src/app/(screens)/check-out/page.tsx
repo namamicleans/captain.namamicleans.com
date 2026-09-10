@@ -140,10 +140,16 @@ export default function CheckOutPage() {
         notes: notes || undefined,
         shiftDate: todayAttendance?.shiftDate,
         metadata: {
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
-          accuracy: position.coords.accuracy,
-          captured_at: new Date().toISOString(),
+          // Shape the backend geofence expects (mirrors check-in's
+          // selfie_capture.location).
+          checkout_capture: {
+            captured_at: new Date().toISOString(),
+            location: {
+              latitude: position.coords.latitude,
+              longitude: position.coords.longitude,
+              accuracy: position.coords.accuracy,
+            },
+          },
           source: "web",
         },
       });
