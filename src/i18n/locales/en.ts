@@ -211,7 +211,15 @@ export const en = {
       labels: {
         leave: 'Leave',
         worked: 'Worked',
+        halfDay: 'Half Day',
         noShow: 'No Show',
+      },
+      summary: {
+        workingDays: 'Working days',
+        worked: 'Worked',
+        half: 'Half',
+        leave: 'Leave',
+        noShow: 'No show',
       },
       hourBands: {
         h0to3: '0-3 hours',
