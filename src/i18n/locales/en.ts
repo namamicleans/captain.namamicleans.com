@@ -48,6 +48,18 @@ export const en = {
     enterQuantity: 'Enter quantity',
     youreActive: "You're Active",
     onDuty: 'On duty',
+    alreadyCheckedIn: 'You are already checked in today',
+    odometerPhotoFirst: 'Take a clear photo of your starting odometer.',
+    enterReading: 'Enter the reading',
+    uploadFailed: 'Upload failed.',
+    qr: {
+      title: 'Scan the office code',
+      subtitle: 'Point your camera at the screen at {{office}}.',
+      holding: 'Hold steady on the office screen… {{count}}/{{total}}',
+      wrongOffice: "That code isn't from your office.",
+      cameraDenied: 'Allow camera access to scan the office code.',
+      cameraError: "Couldn't open the camera.",
+    },
   },
   checkOut: {
     title: 'Check Out',
