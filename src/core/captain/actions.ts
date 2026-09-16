@@ -23,6 +23,7 @@ import type {
   CaptainShiftMaterialSnapshot,
   CaptainShiftSummary,
   Job,
+  JobSelectedAddon,
 } from "@/types/captain";
 import type { ServerActionResponse } from "@/types/generic";
 import type { UploadUrlPayload } from "@/lib/directUpload";
@@ -107,7 +108,23 @@ type BookingUserPackageApi = {
   payment_method?: string | null;
   package_plan: BookingPackagePlanApi;
   selected_variants?: SelectedVariantApi[];
+  // Every addon selected anywhere in the package, not just this booking —
+  // kept for payment/quantity display only. Which addons this specific
+  // visit actually carries comes from the booking-level `addons` field
+  // below (BookingAddon rows), not from here.
   selected_addons?: SelectedAddonApi[];
+};
+
+// One BookingAddon row = one unit of one addon on this specific booking
+// (matches bookings.serializers.booking_serializers.BookingAddonSerializer).
+// Unlike SelectedAddonApi (package-wide, see BookingUserPackageApi above),
+// this is the correctly booking-scoped source for "what add-ons does this
+// visit have".
+type BookingAddonApi = {
+  id: number;
+  addon_id: number | null;
+  addon_name: string;
+  price_at_booking: string | number;
 };
 
 type BookingApi = {
@@ -133,6 +150,7 @@ type BookingApi = {
   notes?: string | null;
   user: BookingUserApi;
   user_package: BookingUserPackageApi;
+  addons?: BookingAddonApi[];
 };
 
 type PaginatedResponse<T> = {
@@ -412,6 +430,32 @@ function buildScheduleTimestamp(
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+// Groups this booking's BookingAddon rows (one row = one unit) into the
+// same {id, name, price, quantity} shape the "selected addons" badge
+// already expects, instead of falling back to the package-wide list.
+function buildBookingScopedAddons(
+  addons: BookingAddonApi[] | undefined
+): JobSelectedAddon[] | undefined {
+  if (!addons || addons.length === 0) return undefined;
+
+  const grouped = new Map<string, JobSelectedAddon>();
+  for (const row of addons) {
+    const key = String(row.addon_id ?? row.addon_name);
+    const existing = grouped.get(key);
+    if (existing) {
+      existing.quantity += 1;
+    } else {
+      grouped.set(key, {
+        id: row.addon_id,
+        name: row.addon_name,
+        price: parseAmount(row.price_at_booking),
+        quantity: 1,
+      });
+    }
+  }
+  return [...grouped.values()];
+}
+
 function transformBookingToJob(api: BookingApi): Job {
   const serviceType = inferServiceType(api.service_code, api.service);
   return {
@@ -444,7 +488,10 @@ function transformBookingToJob(api: BookingApi): Job {
     quantityUnit: api.quantity_unit?.toString().trim() || undefined,
     isQuantityBased: Boolean(api.is_quantity_based),
     selectedVariants: api.user_package?.selected_variants,
-    selectedAddons: api.user_package?.selected_addons,
+    // Booking-scoped (BookingAddon), not the package-wide
+    // user_package.selected_addons — a package's addons only apply to
+    // whichever of its bookings they were actually assigned to.
+    selectedAddons: buildBookingScopedAddons(api.addons),
   };
 }
 
