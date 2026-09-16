@@ -215,8 +215,21 @@ export function CaptainProvider({
       }
       return result.data;
     },
+    // Attendance state, unlike jobs/leaves elsewhere in this app, has to
+    // stay correct across a long-lived, backgrounded PWA session — a
+    // captain who checks in, backgrounds the app for hours, then comes
+    // back should see "checked in", not a stale pre-check-in snapshot
+    // from this morning's first load. `refetchOnWindowFocus` covers both
+    // desktop tab focus and mobile app-resume (React Query's focus
+    // manager listens to `visibilitychange` too), and only actually
+    // refetches once `staleTime` has elapsed, so a quick app-switch
+    // within a minute still doesn't cause extra requests.
+    // `refetchInterval` is a belt-and-suspenders backstop for PWA/WebView
+    // wrappers where the visibility API doesn't fire reliably.
     staleTime: 60 * 1000,
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: true,
+    refetchInterval: 3 * 60 * 1000,
+    refetchIntervalInBackground: false,
     enabled: !!initialUser, // Don't fetch if not logged in
   });
 
